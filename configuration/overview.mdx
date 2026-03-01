@@ -1,0 +1,242 @@
+---
+title: Configuration Overview
+description: Config file locations, JSONC support, schema validation, and quick start guide
+---
+
+## File Locations
+
+oh-my-opencode uses a **priority-based configuration system** where project settings override user settings:
+
+1. **Project config** (highest priority):
+   - `.opencode/oh-my-opencode.jsonc`
+   - `.opencode/oh-my-opencode.json`
+
+2. **User config**:
+
+| Platform | Path |
+|----------|------|
+| macOS/Linux | `~/.config/opencode/oh-my-opencode.jsonc` |
+| Windows | `%APPDATA%\opencode\oh-my-opencode.jsonc` |
+
+<Note>
+  `.jsonc` files are preferred over `.json` files and support comments and trailing commas.
+</Note>
+
+## JSONC Support
+
+JSON with Comments (JSONC) provides a better configuration experience:
+
+```jsonc
+{
+  // Line comments work
+  "agents": {
+    "sisyphus": {
+      "model": "anthropic/claude-opus-4-6", // Trailing commas allowed
+    },
+  },
+  
+  /* Block comments
+     also work */
+  "categories": {
+    "quick": { "model": "opencode/gpt-5-nano" }
+  },
+}
+```
+
+## Schema Autocomplete
+
+Enable IDE autocomplete and validation by adding the `$schema` field:
+
+```jsonc
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json"
+}
+```
+
+This provides:
+- IntelliSense for all config options
+- Real-time validation
+- Inline documentation
+- Error detection
+
+## Guided Setup
+
+Run the interactive installer to create your configuration:
+
+```bash
+bunx oh-my-opencode install
+```
+
+This wizard helps you:
+- Choose project vs user config location
+- Configure agents and categories
+- Set up model preferences
+- Enable/disable features
+
+## Quick Start Example
+
+Here's a practical starting configuration with comments explaining each section:
+
+```jsonc
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+
+  // Main orchestrator - Claude Opus or Kimi K2.5 work best
+  "agents": {
+    "sisyphus": {
+      "model": "kimi-for-coding/k2p5",
+      // Switch to max-thinking mode when user says "ultrawork"
+      "ultrawork": { 
+        "model": "anthropic/claude-opus-4-6", 
+        "variant": "max" 
+      }
+    },
+
+    // Research agents - cheaper models are fine
+    "librarian": { "model": "zai-coding-plan/glm-4.7" },
+    "explore": { "model": "github-copilot/grok-code-fast-1" },
+
+    // Architecture consultation - GPT or Claude Opus
+    "oracle": { 
+      "model": "openai/gpt-5.2", 
+      "variant": "high" 
+    },
+
+    // Prometheus inherits sisyphus model; just add prompt guidance
+    "prometheus": { 
+      "prompt_append": "Leverage deep & quick agents heavily, always in parallel." 
+    }
+  },
+
+  // Domain-specific model delegation
+  "categories": {
+    // Trivial tasks
+    "quick": { "model": "opencode/gpt-5-nano" },
+
+    // Moderate tasks
+    "unspecified-low": { "model": "kimi-for-coding/k2p5" },
+
+    // Complex work
+    "unspecified-high": { 
+      "model": "anthropic/claude-sonnet-4-6", 
+      "variant": "max" 
+    },
+
+    // Documentation & prose
+    "writing": { "model": "kimi-for-coding/k2p5" },
+
+    // Visual tasks - Gemini excels here
+    "visual-engineering": { 
+      "model": "google/gemini-3-pro", 
+      "variant": "high" 
+    },
+
+    // Custom category for git operations
+    "git": {
+      "model": "opencode/gpt-5-nano",
+      "description": "All git operations",
+      "prompt_append": "Focus on atomic commits, clear messages, and safe operations."
+    }
+  },
+
+  // Limit expensive providers; let cheap ones run freely
+  "background_task": {
+    "providerConcurrency": { 
+      "anthropic": 3, 
+      "openai": 3, 
+      "opencode": 10, 
+      "zai-coding-plan": 10 
+    },
+    "modelConcurrency": { 
+      "anthropic/claude-opus-4-6": 2, 
+      "opencode/gpt-5-nano": 20 
+    }
+  },
+
+  // Enable experimental features
+  "experimental": { 
+    "aggressive_truncation": true, 
+    "task_system": true 
+  },
+  
+  // Disable tmux pane spawning
+  "tmux": { "enabled": false }
+}
+```
+
+## Configuration Validation
+
+oh-my-opencode uses **Zod v4** for runtime validation. All fields are optional — omitted fields use plugin defaults.
+
+Check your configuration health:
+
+```bash
+bunx oh-my-opencode doctor --verbose
+```
+
+This shows:
+- Effective model resolution for all agents
+- Active vs disabled hooks/MCPs/skills
+- API key status
+- Configuration errors
+
+## Configuration Merging
+
+When both project and user configs exist:
+
+<Steps>
+  <Step title="Object fields">
+    Deep merge (e.g., `agents`, `categories`)
+  </Step>
+  <Step title="Array fields">
+    Set union (e.g., `disabled_hooks`, `disabled_mcps`)
+  </Step>
+  <Step title="Primitives">
+    Project config overrides user config
+  </Step>
+</Steps>
+
+## Environment Variables
+
+<ParamField path="OPENCODE_CONFIG_DIR" type="string">
+  Override OpenCode config directory. Useful for profile isolation.
+  
+  ```bash
+  OPENCODE_CONFIG_DIR=~/.config/opencode-work opencode
+  ```
+</ParamField>
+
+<ParamField path="OPENCODE_DEFAULT_AGENT" type="string">
+  Default agent for `oh-my-opencode run` command.
+  
+  ```bash
+  OPENCODE_DEFAULT_AGENT=hephaestus bunx oh-my-opencode run
+  ```
+</ParamField>
+
+## Migration System
+
+Configurations are automatically migrated when legacy keys are detected:
+
+- Hook name updates (e.g., `anthropic-auto-compact` → `anthropic-context-window-limit-recovery`)
+- Agent name normalization
+- Model version upgrades
+
+Migration history is tracked in the `_migrations` array to prevent re-applying migrations.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Agent Configuration" icon="robot" href="/configuration/agents">
+    Configure all 11 agents with model overrides and permissions
+  </Card>
+  <Card title="Categories" icon="grid-2" href="/configuration/categories">
+    Set up domain-specific model delegation
+  </Card>
+  <Card title="Hooks" icon="webhook" href="/configuration/hooks">
+    Customize 46 lifecycle hooks
+  </Card>
+  <Card title="Advanced" icon="flask" href="/configuration/advanced">
+    Runtime fallback, hashline edit, and experimental features
+  </Card>
+</CardGroup>

@@ -1,0 +1,539 @@
+---
+title: MCP System
+description: Three-tier Model Context Protocol system with built-in, Claude Code, and skill-embedded servers
+---
+
+Oh My OpenCode provides a three-tier MCP (Model Context Protocol) system for extending agent capabilities with external tools and data sources.
+
+## Three-Tier Architecture
+
+<Steps>
+  <Step title="Tier 1: Built-in MCPs">
+    **Source:** `src/mcp/`  
+    **Type:** Remote HTTP  
+    **Servers:** websearch, context7, grep_app  
+    **Management:** Plugin-managed, always available
+  </Step>
+  <Step title="Tier 2: Claude Code MCPs">
+    **Source:** `.mcp.json`  
+    **Type:** stdio or HTTP  
+    **Management:** Environment variable expansion (`${VAR}`)  
+    **Loader:** `claude-code-mcp-loader`
+  </Step>
+  <Step title="Tier 3: Skill-embedded MCPs">
+    **Source:** SKILL.md YAML frontmatter  
+    **Type:** stdio or HTTP  
+    **Management:** Per-session lifecycle  
+    **Manager:** `SkillMcpManager`
+  </Step>
+</Steps>
+
+## Built-in MCPs
+
+### websearch
+
+**URL:** `https://mcp.exa.ai/mcp` (default) or `https://mcp.tavily.com/mcp/`  
+**Provider:** Exa (default) or Tavily  
+**Auth:** Optional (`EXA_API_KEY` or `TAVILY_API_KEY`)
+
+<Accordion title="Configuration">
+
+**Default (Exa):**
+```jsonc
+{
+  "websearch": {
+    "provider": "exa"  // Default, works without API key
+  }
+}
+```
+
+**With API Key (Exa):**
+```bash
+export EXA_API_KEY="your-key"
+```
+
+**Tavily Provider:**
+```jsonc
+{
+  "websearch": {
+    "provider": "tavily"  // Requires TAVILY_API_KEY
+  }
+}
+```
+
+```bash
+export TAVILY_API_KEY="your-key"
+```
+
+**Source:** `src/mcp/websearch.ts:11`
+
+```typescript
+export function createWebsearchConfig(config?: WebsearchConfig): RemoteMcpConfig {
+  const provider = config?.provider || "exa"
+
+  if (provider === "tavily") {
+    const tavilyKey = process.env.TAVILY_API_KEY
+    if (!tavilyKey) {
+      throw new Error("TAVILY_API_KEY required for Tavily")
+    }
+    return {
+      type: "remote",
+      url: "https://mcp.tavily.com/mcp/",
+      enabled: true,
+      headers: { Authorization: `Bearer ${tavilyKey}` },
+      oauth: false,
+    }
+  }
+
+  // Default: Exa
+  return {
+    type: "remote",
+    url: process.env.EXA_API_KEY
+      ? `https://mcp.exa.ai/mcp?tools=web_search_exa&exaApiKey=${encodeURIComponent(process.env.EXA_API_KEY)}`
+      : "https://mcp.exa.ai/mcp?tools=web_search_exa",
+    enabled: true,
+    ...(process.env.EXA_API_KEY ? { headers: { "x-api-key": process.env.EXA_API_KEY } } : {}),
+    oauth: false,
+  }
+}
+```
+
+</Accordion>
+
+**Tools:**
+- `websearch_web_search_exa` - Web search with Exa/Tavily
+
+**Use Cases:**
+- Documentation discovery
+- Latest information retrieval
+- Site verification
+- Release notes lookup
+
+### context7
+
+**URL:** `https://mcp.context7.com/mcp`  
+**Auth:** Optional (`CONTEXT7_API_KEY`)  
+**Purpose:** Library documentation lookup
+
+<Accordion title="Configuration">
+
+**No Authentication (Public docs):**
+```jsonc
+// Works immediately, no config needed
+```
+
+**With Authentication:**
+```bash
+export CONTEXT7_API_KEY="your-key"
+```
+
+**Source:** `src/mcp/context7.ts:1`
+
+```typescript
+export const context7 = {
+  type: "remote" as const,
+  url: "https://mcp.context7.com/mcp",
+  enabled: true,
+  headers: process.env.CONTEXT7_API_KEY
+    ? { Authorization: `Bearer ${process.env.CONTEXT7_API_KEY}` }
+    : undefined,
+  oauth: false as const,
+}
+```
+
+</Accordion>
+
+**Tools:**
+- `context7_resolve-library-id` - Resolve library name to ID
+- `context7_query-docs` - Query library documentation
+- `context7_get-library-docs` - Get full library docs
+
+**Workflow:**
+```typescript
+// 1. Resolve library ID
+const result = await context7_resolve-library-id("react-query")
+// { id: "tanstack-query" }
+
+// 2. Query specific topic
+await context7_query-docs(
+  libraryId: "tanstack-query",
+  query: "useQuery hook options"
+)
+```
+
+### grep_app
+
+**URL:** `https://mcp.grep.app`  
+**Auth:** None required  
+**Purpose:** GitHub code search
+
+<Accordion title="Configuration">
+
+**No Configuration Needed:**
+```jsonc
+// Works immediately
+```
+
+**Source:** `src/mcp/grep-app.ts:1`
+
+```typescript
+export const grep_app = {
+  type: "remote" as const,
+  url: "https://mcp.grep.app",
+  enabled: true,
+  oauth: false as const,
+}
+```
+
+</Accordion>
+
+**Tools:**
+- `grep_app_searchGitHub` - Search GitHub repositories for code patterns
+
+**Parameters:**
+```typescript
+{
+  query: string,           // Search query
+  language?: string[],     // Filter by language ["TypeScript", "JavaScript"]
+  repo?: string,           // Specific repo "owner/name"
+  useRegexp?: boolean      // Enable regex search
+}
+```
+
+**Examples:**
+```typescript
+// Basic search
+await grep_app_searchGitHub({
+  query: "useQuery(",
+  language: ["TypeScript"]
+})
+
+// Regex search
+await grep_app_searchGitHub({
+  query: "function\\s+\\w+Hook",
+  useRegexp: true
+})
+
+// Specific repo
+await grep_app_searchGitHub({
+  query: "createContext",
+  repo: "facebook/react"
+})
+```
+
+## Disabling Built-in MCPs
+
+```jsonc
+{
+  "disabled_mcps": [
+    "websearch",  // Disable web search
+    "context7",   // Disable library docs
+    "grep_app"    // Disable GitHub search
+  ]
+}
+```
+
+## Claude Code MCPs (.mcp.json)
+
+### Configuration Format
+
+```jsonc
+// .mcp.json
+{
+  "mcpServers": {
+    "my-server": {
+      "command": "node",
+      "args": ["./server.js"],
+      "env": {
+        "API_KEY": "${MY_API_KEY}",  // Env var expansion
+        "NODE_ENV": "production"
+      }
+    },
+    "remote-server": {
+      "url": "https://mcp.example.com/server",
+      "headers": {
+        "Authorization": "Bearer ${AUTH_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+### Environment Variable Expansion
+
+**Supported patterns:**
+- `${VAR}` - Required variable (throws if missing)
+- `${VAR:-default}` - Optional with default value
+
+**Source:** `src/features/claude-code-mcp-loader/env-expander.ts`
+
+```typescript
+// Example .mcp.json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres"],
+      "env": {
+        "POSTGRES_URL": "${POSTGRES_URL}",
+        "LOG_LEVEL": "${LOG_LEVEL:-info}"  // Defaults to "info"
+      }
+    }
+  }
+}
+```
+
+### Loader Implementation
+
+**Source:** `src/features/claude-code-mcp-loader/` (5 files)
+
+<Accordion title="Loader Files">
+
+- `loader.ts` - Main loader logic
+- `transformer.ts` - Config transformation
+- `env-expander.ts` - `${VAR}` expansion
+- `types.ts` - Type definitions
+- `index.ts` - Barrel exports
+
+</Accordion>
+
+## Skill-embedded MCPs
+
+### SKILL.md Configuration
+
+```markdown
+---
+name: my-skill
+description: Skill with embedded MCP
+mcpServers:
+  playwright:
+    command: npx
+    args: ["@playwright/mcp@latest"]
+  custom-server:
+    url: https://mcp.example.com/api
+    headers:
+      Authorization: Bearer ${API_TOKEN}
+---
+
+# Skill Content
+```
+
+### SkillMcpManager
+
+**Source:** `src/features/skill-mcp-manager/manager.ts:9`
+
+Manages per-session MCP client lifecycle.
+
+```typescript
+export class SkillMcpManager {
+  // Get or create client for session
+  async getOrCreateClient(
+    info: SkillMcpClientInfo,
+    config: ClaudeCodeMcpServer
+  ): Promise<Client>
+
+  // List available tools
+  async listTools(info, context): Promise<Tool[]>
+
+  // Call MCP tool
+  async callTool(
+    info: SkillMcpClientInfo,
+    context: SkillMcpServerContext,
+    name: string,
+    args: Record<string, unknown>
+  ): Promise<unknown>
+
+  // Cleanup on session end
+  async disconnectSession(sessionID: string): Promise<void>
+  async disconnectAll(): Promise<void>
+}
+```
+
+### Connection Types
+
+<CodeGroup>
+
+```typescript stdio
+// stdio connection (local process)
+{
+  command: "npx",
+  args: ["@playwright/mcp@latest"],
+  env: {
+    NODE_ENV: "production"
+  }
+}
+```
+
+```typescript http
+// HTTP connection (remote server)
+{
+  url: "https://mcp.example.com/server",
+  headers: {
+    "Authorization": "Bearer token"
+  },
+  oauth: false
+}
+```
+
+```typescript oauth
+// OAuth connection
+{
+  url: "https://mcp.example.com/server",
+  oauth: {
+    authorizationUrl: "https://auth.example.com/authorize",
+    tokenUrl: "https://auth.example.com/token",
+    clientId: "${CLIENT_ID}",
+    clientSecret: "${CLIENT_SECRET}",
+    scope: "read write"
+  }
+}
+```
+
+</CodeGroup>
+
+### Connection Files
+
+**Source:** `src/features/skill-mcp-manager/`
+
+<Accordion title="Connection Implementation (10 files)">
+
+- `connection.ts` - Client factory
+- `stdio-client.ts` - stdio connection
+- `http-client.ts` - HTTP connection
+- `oauth-handler.ts` - OAuth 2.0 + PKCE flow
+- `cleanup.ts` - Session cleanup
+- `connection-type.ts` - Connection type detection
+- `env-cleaner.ts` - Environment variable sanitization
+- `types.ts` - Type definitions
+- `manager.ts` - SkillMcpManager class
+- `index.ts` - Barrel exports
+
+</Accordion>
+
+## MCP OAuth Support
+
+**Source:** `src/features/mcp-oauth/` (10 files, HIGH complexity)
+
+Supports OAuth 2.0 with PKCE and Dynamic Client Registration (RFC 7591).
+
+### OAuth Flow
+
+<Steps>
+  <Step title="Authorization Request">
+    Generate PKCE challenge, redirect to authorization URL
+  </Step>
+  <Step title="User Authorization">
+    User approves access in browser
+  </Step>
+  <Step title="Token Exchange">
+    Exchange authorization code for access token
+  </Step>
+  <Step title="Token Storage">
+    Store access/refresh tokens securely
+  </Step>
+  <Step title="Token Refresh">
+    Auto-refresh on expiration
+  </Step>
+</Steps>
+
+### Configuration
+
+```yaml
+# SKILL.md with OAuth
+mcpServers:
+  oauth-server:
+    url: https://api.example.com/mcp
+    oauth:
+      authorizationUrl: https://auth.example.com/authorize
+      tokenUrl: https://auth.example.com/token
+      clientId: ${OAUTH_CLIENT_ID}
+      clientSecret: ${OAUTH_CLIENT_SECRET}
+      scope: read write
+      usePKCE: true
+```
+
+## MCP Tool Permissions
+
+Restrict MCP tools per agent:
+
+```jsonc
+{
+  "agents": {
+    "librarian": {
+      "permission": {
+        "grep_app_*": "allow",     // Allow all grep_app tools
+        "websearch_*": "allow",    // Allow all websearch tools
+        "context7_*": "allow"      // Allow all context7 tools
+      }
+    },
+    "sisyphus": {
+      "permission": {
+        "grep_app_*": false,       // Deny grep_app
+        "websearch_*": "allow"     // Allow websearch
+      }
+    }
+  }
+}
+```
+
+## Doctor Check
+
+Verify MCP configuration:
+
+```bash
+bunx oh-my-opencode doctor
+```
+
+**Checks:**
+- Built-in MCPs connectivity
+- Claude Code `.mcp.json` validity
+- Environment variable availability
+- Skill-embedded MCP configurations
+
+**Source:** `src/cli/doctor/checks/tools-mcp.ts`
+
+## Source Files
+
+<AccordionGroup>
+  <Accordion title="Built-in MCPs (6 files)">
+    - `src/mcp/index.ts` - createBuiltinMcps factory
+    - `src/mcp/websearch.ts` - Exa/Tavily configuration
+    - `src/mcp/context7.ts` - Context7 configuration
+    - `src/mcp/grep-app.ts` - Grep.app configuration
+    - `src/mcp/types.ts` - McpNameSchema
+    - `src/config/schema/websearch.ts` - Websearch config schema
+  </Accordion>
+  <Accordion title="Claude Code MCP Loader (5 files)">
+    - `src/features/claude-code-mcp-loader/loader.ts`
+    - `src/features/claude-code-mcp-loader/transformer.ts`
+    - `src/features/claude-code-mcp-loader/env-expander.ts`
+    - `src/features/claude-code-mcp-loader/types.ts`
+    - `src/features/claude-code-mcp-loader/index.ts`
+  </Accordion>
+  <Accordion title="Skill MCP Manager (10 files)">
+    - `src/features/skill-mcp-manager/manager.ts`
+    - `src/features/skill-mcp-manager/connection.ts`
+    - `src/features/skill-mcp-manager/stdio-client.ts`
+    - `src/features/skill-mcp-manager/http-client.ts`
+    - `src/features/skill-mcp-manager/oauth-handler.ts`
+    - `src/features/skill-mcp-manager/cleanup.ts`
+    - `src/features/skill-mcp-manager/connection-type.ts`
+    - `src/features/skill-mcp-manager/env-cleaner.ts`
+    - `src/features/skill-mcp-manager/types.ts`
+    - `src/features/skill-mcp-manager/index.ts`
+  </Accordion>
+  <Accordion title="MCP OAuth (10 files)">
+    - `src/features/mcp-oauth/` - OAuth 2.0 + PKCE + DCR (RFC 7591)
+  </Accordion>
+</AccordionGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Skills" href="/api/features/skills">
+    Skill system with embedded MCPs
+  </Card>
+  <Card title="Tools" href="/api/tools">
+    26 tools including MCP tool wrappers
+  </Card>
+</CardGroup>

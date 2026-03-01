@@ -1,0 +1,431 @@
+---
+title: Troubleshooting
+description: Common issues, debug steps, log locations, and provider-specific problems
+---
+
+Common issues and solutions for Oh My OpenCode.
+
+## Quick Diagnostics
+
+Run the built-in diagnostic tool:
+
+```bash
+bunx oh-my-opencode doctor
+```
+
+This performs 17+ health checks across installation, configuration, authentication, dependencies, and tools.
+
+<Note>
+For detailed output, use `bunx oh-my-opencode doctor --verbose`
+</Note>
+
+---
+
+## Installation Issues
+
+### OpenCode Version Too Old
+
+**Problem**: Plugin requires OpenCode 1.0.150 or higher.
+
+**Solution**:
+
+```bash
+npm install -g opencode@latest
+# or
+bun install -g opencode@latest
+```
+
+### Plugin Not Registered
+
+**Problem**: Plugin doesn't load after installation.
+
+**Solution**: Verify plugin registration in `~/.config/opencode/opencode.json`:
+
+```json
+{
+  "plugin": [
+    "oh-my-opencode"
+  ]
+}
+```
+
+If missing, reinstall:
+
+```bash
+bunx oh-my-opencode install
+```
+
+### Configuration File Errors
+
+**Problem**: JSONC parsing errors or invalid configuration.
+
+**Solution**: Check configuration syntax:
+
+```bash
+bunx oh-my-opencode doctor --category configuration
+```
+
+Configuration files support JSONC (comments and trailing commas). Common issues:
+- Missing quotes around keys
+- Invalid trailing commas in arrays
+- Incorrect comment syntax (use `//` or `/* */`)
+
+---
+
+## Provider-Specific Issues
+
+### Anthropic (Claude)
+
+#### Authentication Failures
+
+**Problem**: "Invalid API key" or authentication errors.
+
+**Solution**: Re-authenticate using OpenCode's interactive auth:
+
+```bash
+opencode auth login
+# Select: Provider → Anthropic → Claude Pro/Max
+```
+
+<Warning>
+Claude Pro/Max subscription uses OAuth authentication. API keys are **not** used.
+</Warning>
+
+#### Rate Limiting
+
+**Problem**: Hitting rate limits during heavy orchestration.
+
+**Solution**:
+1. Check if you're on max20 mode (20x higher limits)
+2. Configure agents to use alternative models:
+
+```jsonc
+{
+  "agents": {
+    "sisyphus": { "model": "kimi-for-coding/k2p5" },
+    "explore": { "model": "opencode/gpt-5-nano" }
+  }
+}
+```
+
+### OpenAI (ChatGPT)
+
+#### GPT-5.3-codex Access Issues
+
+**Problem**: Hephaestus agent fails with "model not found".
+
+**Solution**: GPT-5.3-codex requires ChatGPT Plus subscription. Verify access:
+
+```bash
+bunx oh-my-opencode doctor --category authentication
+```
+
+Fallback option: Use Kimi K2.5 or Claude Opus for similar capabilities.
+
+### Google (Gemini)
+
+#### Antigravity Authentication
+
+**Problem**: Gemini models require special authentication setup.
+
+**Solution**: Install the Antigravity auth plugin:
+
+```json
+{
+  "plugin": [
+    "oh-my-opencode",
+    "opencode-antigravity-auth@latest"
+  ]
+}
+```
+
+Then authenticate:
+
+```bash
+opencode auth login
+# Select: Google → OAuth with Google (Antigravity)
+```
+
+<Info>
+Antigravity supports multi-account load balancing. Add up to 10 Google accounts to avoid rate limits.
+</Info>
+
+#### Model Name Mismatch
+
+**Problem**: Using built-in Google auth model names with Antigravity plugin.
+
+**Solution**: Override model names in `oh-my-opencode.json`:
+
+```jsonc
+{
+  "agents": {
+    "multimodal-looker": { "model": "google/antigravity-gemini-3-flash" }
+  }
+}
+```
+
+Available models:
+- `google/antigravity-gemini-3-pro` (variants: `low`, `high`)
+- `google/antigravity-gemini-3-flash` (variants: `minimal`, `low`, `medium`, `high`)
+- `google/antigravity-claude-sonnet-4-6`
+
+### Ollama
+
+#### JSON Parse Error: Streaming Issue
+
+**Problem**: "JSON Parse error: Unexpected EOF" when using Ollama agents with tool calls.
+
+**Root Cause**: Ollama returns NDJSON (newline-delimited JSON) when streaming, but Claude Code SDK expects single JSON objects.
+
+**Solution**: Disable streaming in your Ollama provider configuration:
+
+```json
+{
+  "provider": "ollama",
+  "model": "qwen3-coder",
+  "stream": false
+}
+```
+
+<Warning>
+**Cons of disabling streaming:**
+- Slightly slower response time
+- Less interactive feedback
+
+**Pros:**
+- Works immediately
+- No code changes needed
+</Warning>
+
+**Tracking**: [GitHub Issue #1124](https://github.com/code-yeongyu/oh-my-opencode/issues/1124)
+
+---
+
+## Agent Issues
+
+### Sisyphus Not Working Properly
+
+**Problem**: Main orchestrator agent produces poor results.
+
+**Likely Cause**: Not using Claude Opus 4.6.
+
+<Warning>
+Sisyphus is **heavily optimized for Claude Opus 4.6**. Using other models may result in significantly degraded experience.
+</Warning>
+
+**Solution**: Check your model configuration:
+
+```bash
+cat ~/.config/opencode/oh-my-opencode.json | grep sisyphus -A 3
+```
+
+Recommended fallback chain:
+```text
+Claude Opus 4.6 (max20) → Kimi K2.5 → GLM 5
+```
+
+### Hephaestus Model Errors
+
+**Problem**: "The Legitimate Craftsman" agent fails to start.
+
+**Cause**: Hephaestus requires GPT-5.3-codex (OpenAI Plus subscription).
+
+**Solution**: Either:
+1. Subscribe to ChatGPT Plus for GPT-5.3-codex access
+2. Use Sisyphus instead: `ulw <your task>`
+
+<Info>
+Hephaestus has no fallback model. It's specifically designed for GPT-5.3-codex's capabilities.
+</Info>
+
+### Background Agent Failures
+
+**Problem**: Background agents timing out or not returning results.
+
+**Solution**: Check concurrency limits in configuration:
+
+```jsonc
+{
+  "background_agent": {
+    "max_concurrent_per_model_or_provider": 5  // Default
+  }
+}
+```
+
+Increase if you have higher rate limits, decrease if hitting limits frequently.
+
+---
+
+## Tool Issues
+
+### LSP Server Not Starting
+
+**Problem**: `lsp_rename`, `lsp_diagnostics` tools fail.
+
+**Solution**:
+
+1. Check if TypeScript/language server is installed:
+
+```bash
+which typescript-language-server
+# or
+which ts-node
+```
+
+2. Verify project has proper language configuration (tsconfig.json, package.json, etc.)
+
+### MCP Server Connection Failures
+
+**Problem**: Built-in MCPs (websearch, context7, grep_app) not responding.
+
+**Solution**: Check MCP configuration:
+
+```bash
+bunx oh-my-opencode doctor --category tools
+```
+
+Built-in MCPs are remote HTTP servers. Connection issues:
+- Network connectivity problems
+- MCP server temporarily down
+- Authentication issues (for websearch)
+
+### Hash-Anchored Edit Failures
+
+**Problem**: Edit tool rejects changes with "hash mismatch" error.
+
+**Cause**: File was modified between read and edit operations.
+
+**Solution**: This is working as designed. The agent should:
+1. Re-read the file
+2. Recalculate the edit based on new content
+3. Apply changes with updated hash references
+
+<Note>
+Hash mismatches prevent stale edits from corrupting files. This is a feature, not a bug.
+</Note>
+
+---
+
+## Performance Issues
+
+### Slow Response Times
+
+**Problem**: Agent responses take too long.
+
+**Solutions**:
+
+1. **Use faster models for utility tasks**:
+
+```jsonc
+{
+  "agents": {
+    "explore": { "model": "opencode/gpt-5-nano" },
+    "librarian": { "model": "opencode/minimax-m2.5-free" }
+  }
+}
+```
+
+2. **Disable unused hooks**:
+
+```jsonc
+{
+  "disabled_hooks": [
+    "wisdom-hook",
+    "session-saver-hook"
+  ]
+}
+```
+
+3. **Reduce background agent concurrency**:
+
+```jsonc
+{
+  "background_agent": {
+    "max_concurrent_per_model_or_provider": 3
+  }
+}
+```
+
+### High Token Usage
+
+**Problem**: Token costs are too high.
+
+**Solutions**:
+
+1. **Use cheaper models for simple tasks**: Explore and Librarian agents intentionally use free/cheap models.
+
+2. **Enable aggressive truncation**:
+
+```jsonc
+{
+  "experimental": {
+    "aggressive_truncation": true
+  }
+}
+```
+
+3. **Disable context-heavy hooks**:
+
+```jsonc
+{
+  "disabled_hooks": [
+    "context-injection-hook",
+    "session-history-hook"
+  ]
+}
+```
+
+<Warning>
+Disabling hooks may reduce agent effectiveness. Only disable if you understand the tradeoffs.
+</Warning>
+
+---
+
+## Log Locations
+
+### Plugin Logs
+
+```bash
+/tmp/oh-my-opencode.log
+```
+
+View recent logs:
+
+```bash
+tail -f /tmp/oh-my-opencode.log
+```
+
+### OpenCode Logs
+
+```bash
+~/.config/opencode/logs/
+```
+
+### MCP OAuth Tokens
+
+```bash
+~/.config/opencode/mcp-oauth.json
+```
+
+<Warning>
+Tokens are stored with 0600 permissions (owner read/write only). Do not share or commit this file.
+</Warning>
+
+---
+
+## Getting Help
+
+If you encounter issues not covered here:
+
+1. **Check the logs**: `/tmp/oh-my-opencode.log` often contains detailed error messages
+2. **Run diagnostics**: `bunx oh-my-opencode doctor --verbose`
+3. **Search existing issues**: [GitHub Issues](https://github.com/code-yeongyu/oh-my-opencode/issues)
+4. **Report a bug**: Include:
+   - Output of `bunx oh-my-opencode doctor`
+   - Relevant log excerpts (remove sensitive data)
+   - Steps to reproduce
+   - Your configuration (remove API keys/secrets)
+
+<Info>
+Join the [Discord community](https://discord.gg/PUwSMR9XNk) for real-time help from contributors and users.
+</Info>

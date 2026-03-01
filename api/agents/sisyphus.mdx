@@ -1,0 +1,433 @@
+---
+title: "Sisyphus Agent"
+description: "Main orchestrator agent with planning, delegation, and parallel execution capabilities"
+---
+
+## Overview
+
+Sisyphus is the default orchestrator agent that plans, delegates, and executes complex tasks using specialized subagents with aggressive parallel execution. Named after the Greek mythological figure who eternally rolls a boulder uphill, Sisyphus embodies persistence and systematic task execution.
+
+**Philosophy**: "Humans roll their boulder every day. So do you. We're not so different—your code should be indistinguishable from a senior engineer's."
+
+<ParamField path="model" type="string" default="claude-opus-4-6">
+  Default model with thinking enabled (32k budget)
+</ParamField>
+
+<ParamField path="mode" type="string" default="all">
+  Available in both primary and subagent contexts
+</ParamField>
+
+<ParamField path="temperature" type="number" default="0.1">
+  Low temperature for consistent, deterministic behavior
+</ParamField>
+
+<ParamField path="maxTokens" type="number" default="64000">
+  Maximum output tokens per response
+</ParamField>
+
+## Model Configuration
+
+### Default Model
+
+```json
+{
+  "model": "claude-opus-4-6",
+  "variant": "max",
+  "thinking": {
+    "type": "enabled",
+    "budgetTokens": 32000
+  }
+}
+```
+
+### GPT Variant
+
+When using GPT models (gpt-5.2, gpt-5.3-codex):
+
+```json
+{
+  "reasoningEffort": "medium"
+}
+```
+
+### Ultrawork Variant
+
+Maximum performance mode with extended thinking:
+
+```json
+{
+  "variant": "max",
+  "thinking": {
+    "budgetTokens": 32000
+  }
+}
+```
+
+## Fallback Chain
+
+Sisyphus uses a multi-provider fallback chain to ensure availability:
+
+<ResponseField name="Primary" type="string">
+  `anthropic/claude-opus-4-6` (variant: max)
+</ResponseField>
+
+<ResponseField name="Fallback 1" type="string">
+  `opencode/kimi-k2.5-free`
+</ResponseField>
+
+<ResponseField name="Fallback 2" type="string">
+  `opencode/glm-5`
+</ResponseField>
+
+<ResponseField name="Fallback 3" type="string">
+  `opencode/big-pickle`
+</ResponseField>
+
+<Note>
+  Sisyphus requires at least ONE model in the fallback chain to be available. If no models are available, the agent will not activate.
+</Note>
+
+## Tool Permissions
+
+### Allowed Tools
+
+- All standard file operations (read, write, edit)
+- All search tools (grep, glob, ast_grep)
+- LSP tools for code intelligence
+- Background task management
+- Todo/Task management
+- Question tool for user interaction
+
+### Blocked Tools
+
+<ParamField path="call_omo_agent" type="string" default="deny">
+  Cannot spawn other named agents (uses `task` delegation instead)
+</ParamField>
+
+## Core Capabilities
+
+### 1. Todo-Driven Workflow
+
+Sisyphus creates and tracks todos BEFORE starting any non-trivial task:
+
+```typescript
+// User requests a multi-step feature
+// Sisyphus immediately creates todos:
+[
+  { id: 1, task: "Research existing auth patterns", status: "in_progress" },
+  { id: 2, task: "Implement JWT middleware", status: "pending" },
+  { id: 3, task: "Add token refresh logic", status: "pending" },
+  { id: 4, task: "Write tests", status: "pending" },
+  { id: 5, task: "Run verification", status: "pending" }
+]
+```
+
+### 2. Intent Gate & Classification
+
+Every request goes through Phase 0 classification:
+
+<ResponseField name="Trivial" type="string">
+  Single file, known location → Direct tools only
+</ResponseField>
+
+<ResponseField name="Explicit" type="string">
+  Specific file/line, clear command → Execute directly
+</ResponseField>
+
+<ResponseField name="Exploratory" type="string">
+  "How does X work?", "Find Y" → Fire explore agents in parallel
+</ResponseField>
+
+<ResponseField name="Open-ended" type="string">
+  "Improve", "Refactor" → Assess codebase first
+</ResponseField>
+
+<ResponseField name="Ambiguous" type="string">
+  Unclear scope → Ask ONE clarifying question
+</ResponseField>
+
+### 3. Strategic Delegation
+
+Sisyphus delegates to specialized agents and categories:
+
+```typescript
+// Delegation decision flow
+1. Check for specialized agent (oracle, explore, librarian)
+2. Find appropriate task category (visual-engineering, deep, quick)
+3. Load relevant skills (frontend-ui-ux, git-master, playwright)
+4. Work yourself ONLY when super simple
+```
+
+### 4. Parallel Execution
+
+Default behavior is aggressive parallelization:
+
+```typescript
+// CORRECT: Parallel background agents
+task(subagent_type="explore", run_in_background=true, 
+     description="Find auth implementations")
+task(subagent_type="explore", run_in_background=true,
+     description="Find error handling patterns")
+task(subagent_type="librarian", run_in_background=true,
+     description="Find JWT security docs")
+// Continue working immediately
+
+// WRONG: Sequential blocking
+result1 = task(..., run_in_background=false)
+result2 = task(..., run_in_background=false)
+```
+
+## Execution Phases
+
+### Phase 0: Intent Gate
+
+1. Verbalize user's true intent
+2. Classify request type
+3. Check for ambiguity
+4. Validate delegation options
+
+### Phase 1: Codebase Assessment
+
+For open-ended tasks:
+
+1. Check config files (linter, formatter, types)
+2. Sample 2-3 similar files for consistency
+3. Classify state: Disciplined, Transitional, Legacy, or Greenfield
+4. Match or propose conventions accordingly
+
+### Phase 2A: Exploration & Research
+
+```typescript
+// Fire 2-5 explore/librarian agents in parallel
+task(subagent_type="explore", run_in_background=true, load_skills=[], 
+  description="Find auth implementations",
+  prompt="[CONTEXT]: I'm implementing JWT auth...
+          [GOAL]: Match existing auth conventions...
+          [DOWNSTREAM]: Decide middleware structure...
+          [REQUEST]: Find auth middleware, login handlers...")
+```
+
+### Phase 2B: Implementation
+
+1. Find and load relevant skills immediately
+2. Create todo list for 2+ step tasks (in super detail)
+3. Mark tasks in_progress before starting
+4. Mark completed immediately (never batch)
+5. Delegate using 6-section prompt structure
+
+### Phase 2C: Failure Recovery
+
+After 3 consecutive failures:
+
+1. **STOP** all edits immediately
+2. **REVERT** to last working state
+3. **DOCUMENT** attempts and failures
+4. **CONSULT** Oracle with full context
+5. **ASK USER** if Oracle cannot resolve
+
+### Phase 3: Completion
+
+Task is complete when:
+
+- All planned todos marked done
+- `lsp_diagnostics` clean on changed files
+- Build passes (if applicable)
+- User's original request fully addressed
+
+## Delegation Prompt Structure
+
+When delegating, prompts MUST include all 6 sections:
+
+```markdown
+1. TASK: Atomic, specific goal (one action per delegation)
+2. EXPECTED OUTCOME: Concrete deliverables with success criteria
+3. REQUIRED TOOLS: Explicit tool whitelist (prevents tool sprawl)
+4. MUST DO: Exhaustive requirements - leave NOTHING implicit
+5. MUST NOT DO: Forbidden actions - anticipate and block rogue behavior
+6. CONTEXT: File paths, existing patterns, constraints
+```
+
+**Verification after delegation:**
+
+- Does it work as expected?
+- Does it follow existing codebase pattern?
+- Did expected result come out?
+- Did the agent follow "MUST DO" and "MUST NOT DO" requirements?
+
+## Session Continuity
+
+Every `task()` output includes a `session_id` - always use it for follow-ups:
+
+```typescript
+// Initial delegation
+const result = task(category="quick", prompt="Fix type error...")
+// Store: session_id = "ses_abc123"
+
+// Follow-up (preserves full context, saves 70%+ tokens)
+task(session_id="ses_abc123", prompt="Fix: Type error on line 42")
+```
+
+## Usage Examples
+
+### Example 1: Multi-File Feature
+
+```typescript
+// User: "Add JWT authentication to the API"
+
+// Sisyphus Phase 0: Intent verbalization
+"I detect implementation intent (explicit request to add feature). 
+My approach: assess codebase → create plan → delegate to deep category."
+
+// Phase 1: Fire parallel exploration
+task(subagent_type="explore", run_in_background=true, ...)
+task(subagent_type="librarian", run_in_background=true, ...)
+
+// Phase 2: Create detailed todos
+todowrite([
+  "Research existing auth patterns in codebase",
+  "Design JWT middleware structure",
+  "Implement token generation",
+  "Add token validation",
+  "Create refresh token logic",
+  "Add authentication to protected routes",
+  "Write integration tests",
+  "Run full verification"
+])
+
+// Phase 3: Delegate with full context
+task(
+  category="deep",
+  load_skills=["git-master"],
+  prompt="1. TASK: Implement JWT authentication...
+          2. EXPECTED OUTCOME: Working auth with tests...
+          3. REQUIRED TOOLS: write, edit, bash, lsp_diagnostics...
+          4. MUST DO: Follow existing error handling patterns...
+          5. MUST NOT DO: Modify existing routes unnecessarily...
+          6. CONTEXT: src/api/routes/, Express-based API..."
+)
+```
+
+### Example 2: Codebase Investigation
+
+```typescript
+// User: "Why does the auth middleware keep rejecting valid tokens?"
+
+// Sisyphus: Fire parallel investigation
+task(subagent_type="explore", run_in_background=true,
+  description="Find auth middleware implementation",
+  prompt="[CONTEXT]: Debugging token rejection issue...
+          [GOAL]: Locate middleware and validation logic...
+          [REQUEST]: Find middleware files, token validation...")
+
+task(subagent_type="explore", run_in_background=true,
+  description="Find token generation logic",
+  prompt="[CONTEXT]: Debugging token rejection...
+          [GOAL]: Compare generation vs validation...
+          [REQUEST]: Find where tokens are created...")
+
+task(subagent_type="librarian", run_in_background=true,
+  description="Find JWT best practices",
+  prompt="[CONTEXT]: Token validation failing...
+          [GOAL]: Identify common JWT validation pitfalls...
+          [REQUEST]: Common JWT validation errors, clock skew...")
+
+// Continue work, collect results when ready via background_output
+```
+
+### Example 3: Consultation for Hard Problems
+
+```typescript
+// After 3 failed attempts at fixing a race condition
+
+// Sisyphus: Stop, revert, consult Oracle
+task(
+  subagent_type="oracle",
+  run_in_background=false,
+  description="Review race condition fix attempts",
+  prompt="I attempted to fix a race condition in the user 
+          registration flow 3 times with these approaches:
+          1. Added mutex locks - deadlocked
+          2. Used transactions - still had race
+          3. Added optimistic locking - performance degraded
+          
+          Context: [full code context]
+          
+          What's the correct approach?"
+)
+```
+
+## Communication Style
+
+### Be Concise
+
+- Start work immediately (no "I'm on it", "Let me...")
+- Answer directly without preamble
+- Don't summarize unless asked
+- One word answers acceptable when appropriate
+
+### No Flattery
+
+Never start with:
+- "Great question!"
+- "That's a really good idea!"
+- "Excellent choice!"
+
+### No Status Updates
+
+Never start with:
+- "Hey I'm on it..."
+- "I'm working on this..."
+- "Let me start by..."
+- "I'll get to work on..."
+
+Use todos for progress tracking.
+
+### When User is Wrong
+
+If user's approach seems problematic:
+- Don't blindly implement it
+- Don't lecture or be preachy
+- Concisely state concern and alternative
+- Ask if they want to proceed anyway
+
+## Configuration
+
+Customize Sisyphus in `oh-my-opencode.jsonc`:
+
+```jsonc
+{
+  "agents": {
+    "sisyphus": {
+      "model": "anthropic/claude-opus-4-6",
+      "variant": "max",
+      "temperature": 0.1,
+      "thinking": {
+        "type": "enabled",
+        "budgetTokens": 32000
+      },
+      "prompt_append": "Additional custom instructions...",
+      "disable": false
+    }
+  }
+}
+```
+
+## Best Practices
+
+<Check>**Plan obsessively** - Create todos BEFORE starting any multi-step task</Check>
+<Check>**Delegate strategically** - Use specialized agents and categories</Check>
+<Check>**Parallelize aggressively** - Fire multiple background agents simultaneously</Check>
+<Check>**Verify relentlessly** - Run lsp_diagnostics, build, tests on all changes</Check>
+<Check>**Track progress** - Mark todos in_progress/completed immediately</Check>
+
+<Warning>**Never skip todos** on multi-step tasks - user has no visibility</Warning>
+<Warning>**Never batch-complete** multiple todos - defeats real-time tracking</Warning>
+<Warning>**Never proceed** without marking in_progress - no work indication</Warning>
+<Warning>**Never finish** without completing todos - task appears incomplete</Warning>
+
+## Related Agents
+
+- [Hephaestus](/api/agents/hephaestus) - Autonomous deep worker for complex tasks
+- [Atlas](/api/agents/atlas) - Todo orchestrator for systematic execution
+- [Explore](/api/agents/explore) - Fast codebase exploration
+- [Oracle](/api/agents/oracle) - Architecture consultant for hard problems

@@ -1,0 +1,369 @@
+---
+title: hashline_edit
+description: Hash-anchored file editing with LINE#ID validation to prevent stale-line errors
+---
+
+## Overview
+
+The `hashline_edit` tool provides safe, precise file editing using hash-anchored line references (`LINE#ID`). Every line reference includes a content hash that validates the line hasn't changed since it was read, preventing race conditions and stale edits.
+
+**Source**: `src/tools/hashline-edit/`
+
+## How It Works
+
+### LINE#ID Format
+
+Every line in the codebase gets a unique reference:
+
+```
+{line_number}#{hash_id}
+```
+
+- `line_number`: 1-based line number
+- `hash_id`: Two characters from set `ZPMQVRWSNKTXJBYH` (CID alphabet)
+
+**Example from read output**:
+```
+42#VK| function hello() {
+43#PM|   console.log("world")
+44#QR| }
+```
+
+### Validation Pipeline
+
+When you submit an edit:
+
+1. **Hash Validation**: Tool recomputes hash for referenced lines
+2. **Mismatch Detection**: If hash differs, edit is rejected with updated LINE#ID tags
+3. **Batch Application**: All edits validated against same file snapshot
+4. **Bottom-Up Ordering**: Edits applied from end of file to preserve line numbers
+5. **Diff Generation**: Unified diff shown for verification
+
+## Tool Definition
+
+<ParamField path="filePath" type="string" required>
+  Absolute path to file to edit
+</ParamField>
+
+<ParamField path="edits" type="array" required>
+  Array of edit operations to apply (empty when `delete=true`)
+  
+  Each edit object:
+  
+  <ParamField path="op" type="enum" required>
+    Operation type: `"replace"` | `"append"` | `"prepend"`
+  </ParamField>
+  
+  <ParamField path="pos" type="string">
+    Primary anchor in LINE#ID format (e.g., `"42#VK"`)
+    
+    Required for `replace`, optional for `append`/`prepend`
+  </ParamField>
+  
+  <ParamField path="end" type="string">
+    Range end anchor in LINE#ID format
+    
+    Only for range operations (e.g., replace lines 42-50)
+  </ParamField>
+  
+  <ParamField path="lines" type="string | string[] | null" required>
+    Replacement or inserted content
+    
+    - `string`: Single line
+    - `string[]`: Multiple lines (preferred)
+    - `null` or `[]`: Delete (with `replace` op only)
+  </ParamField>
+</ParamField>
+
+<ParamField path="delete" type="boolean">
+  Delete file instead of editing (requires `edits=[]`)
+</ParamField>
+
+<ParamField path="rename" type="string">
+  Rename output file path after edits
+</ParamField>
+
+## Operations
+
+### Replace
+
+Replace single line or range:
+
+```typescript
+// Replace single line
+{
+  op: "replace",
+  pos: "42#VK",
+  lines: "function hello(name: string) {"
+}
+
+// Replace range
+{
+  op: "replace",
+  pos: "42#VK",
+  end: "44#QR",
+  lines: [
+    "function hello(name: string) {",
+    "  console.log(`Hello, ${name}!`)",
+    "}"
+  ]
+}
+
+// Delete line (lines: null)
+{
+  op: "replace",
+  pos: "43#PM",
+  lines: null
+}
+```
+
+### Append
+
+Insert after anchor (or EOF if no anchor):
+
+```typescript
+// Insert after line 44
+{
+  op: "append",
+  pos: "44#QR",
+  lines: ["", "export { hello }"]
+}
+
+// Append to end of file
+{
+  op: "append",
+  lines: ["// End of file"]
+}
+```
+
+### Prepend
+
+Insert before anchor (or BOF if no anchor):
+
+```typescript
+// Insert before line 42
+{
+  op: "prepend",
+  pos: "42#VK",
+  lines: ["// Function definition"]
+}
+
+// Prepend to start of file
+{
+  op: "prepend",
+  lines: ["#!/usr/bin/env node"]
+}
+```
+
+## Usage Examples
+
+### Single Line Edit
+
+```typescript
+hashline_edit({
+  filePath: "/path/to/file.ts",
+  edits: [
+    {
+      op: "replace",
+      pos: "15#VK",
+      lines: "const result = await fetchData()"
+    }
+  ]
+})
+```
+
+### Multi-Line Range Replacement
+
+```typescript
+hashline_edit({
+  filePath: "/path/to/component.tsx",
+  edits: [
+    {
+      op: "replace",
+      pos: "28#PM",
+      end: "35#QR",
+      lines: [
+        "return (",
+        "  <div className='container'>",
+        "    <Header title={title} />",
+        "    <Content>{children}</Content>",
+        "  </div>",
+        ")"
+      ]
+    }
+  ]
+})
+```
+
+### Multiple Operations (One File)
+
+```typescript
+hashline_edit({
+  filePath: "/path/to/utils.ts",
+  edits: [
+    // Add import
+    {
+      op: "prepend",
+      pos: "1#ZP",
+      lines: "import { logger } from './logger'"
+    },
+    // Update function
+    {
+      op: "replace",
+      pos: "42#VK",
+      lines: "export function processData(data: unknown) {"
+    },
+    // Add export
+    {
+      op: "append",
+      lines: ["export { processData }"]
+    }
+  ]
+})
+```
+
+### Delete File
+
+```typescript
+hashline_edit({
+  filePath: "/path/to/old-file.ts",
+  delete: true,
+  edits: []
+})
+```
+
+### Rename After Edit
+
+```typescript
+hashline_edit({
+  filePath: "/path/to/component.js",
+  rename: "/path/to/component.ts",
+  edits: [
+    {
+      op: "replace",
+      pos: "1#ZP",
+      lines: "export const Component: React.FC = () => {"
+    }
+  ]
+})
+```
+
+## Error Handling
+
+### Hash Mismatch
+
+When file changes between read and edit:
+
+```
+2 lines have changed since last read. Use updated {line_number}#{hash_id} references below (>>> marks changed lines).
+
+    40#MQ| function processData(data) {
+    41#NK|   const result = transform(data)
+>>> 42#XJ|   return validate(result)  // Changed: added validation
+    43#PM|   return result
+    44#QR| }
+```
+
+**Recovery**: Copy the updated LINE#ID tags from error output.
+
+### Invalid Reference Format
+
+```
+Invalid line reference format: "42VK". Expected format: "{line_number}#{hash_id}"
+```
+
+**Fix**: Ensure references match `LINE#ID` pattern (e.g., `"42#VK"`).
+
+### Overlapping Ranges
+
+```
+Overlapping edit ranges detected: 42-50 and 48-55
+```
+
+**Fix**: Ensure edit ranges don't overlap. Use single range operation or separate files.
+
+## Autocorrect Features
+
+The tool automatically handles:
+
+1. **Merged Lines**: Auto-expanded back to original line count
+2. **Indentation**: Restored from original lines
+3. **Line Endings**: BOM and CRLF preserved
+4. **Diff Markers**: `>>>` prefix and diff markers auto-stripped from content
+
+## Best Practices
+
+### ✅ Do
+
+- **Copy exact LINE#ID tags** from read output
+- **Batch related edits** in single call per file
+- **Anchor to structural boundaries** (function/class/brace lines)
+- **Re-read after successful edit** before next edit on same file
+- **Preserve formatting** (indentation, trailing commas, brace style)
+
+### ❌ Don't
+
+- **Never guess LINE#ID tags** — always copy from read output
+- **Don't anchor to blank lines** — use structural code lines
+- **Don't include `|content` suffix** — use only `LINE#ID` in anchors
+- **Don't rewrite approximately** — use exact current tokens
+- **Don't create overlapping ranges** — validate edit boundaries
+
+## Implementation Details
+
+### Execution Pipeline
+
+```
+hashline-edit-executor.ts
+  → normalize-edits.ts       # Parse RawHashlineEdit → HashlineEdit
+  → validation.ts            # Validate LINE#ID references
+  → edit-ordering.ts         # Sort bottom-up (descending line numbers)
+  → edit-deduplication.ts    # Remove duplicate operations
+  → edit-operations.ts       # Apply each operation
+  → autocorrect-replacement-lines.ts  # Auto-fix indentation
+  → hashline-edit-diff.ts    # Generate diff output
+```
+
+### Hash Computation
+
+**Source**: `src/tools/hashline-edit/hash-computation.ts`
+
+```typescript
+export function computeLineHash(line: number, content: string): string {
+  // Returns 2-char CID from set ZPMQVRWSNKTXJBYH
+  // Example: line 42, content "function hello() {" → "VK"
+}
+```
+
+### Validation
+
+**Source**: `src/tools/hashline-edit/validation.ts`
+
+```typescript
+export function validateLineRefs(lines: string[], refs: string[]): void {
+  // Throws HashlineMismatchError if any hash doesn't match
+}
+
+export class HashlineMismatchError extends Error {
+  readonly remaps: ReadonlyMap<string, string>
+  // Maps old LINE#ID → new LINE#ID for recovery
+}
+```
+
+## Related Tools
+
+- **Read Tool**: Get file content with LINE#ID tags
+- **Edit Tool**: Alternative editing without hash validation
+- **Write Tool**: Overwrite entire file
+
+## Source Files
+
+| File | Purpose |
+|------|----------|
+| `tools.ts:14` | Tool factory and schema definition |
+| `hashline-edit-executor.ts` | Main execution pipeline |
+| `validation.ts:64` | LINE#ID validation and hash checking |
+| `hash-computation.ts` | Hash generation from line content |
+| `edit-operations.ts` | Apply replace/append/prepend operations |
+| `normalize-edits.ts` | Parse and validate edit schemas |
+| `tool-description.ts:1` | Tool description constant |

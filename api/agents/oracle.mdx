@@ -1,0 +1,567 @@
+---
+title: "Oracle Agent"
+description: "Architecture consultant with read-only access and high-IQ reasoning for debugging and design"
+---
+
+## Overview
+
+Oracle is a strategic technical advisor with deep reasoning capabilities, operating as a specialized consultant for complex analysis and architectural decisions. Inspired by AmpCode's consultation pattern, Oracle provides read-only, high-quality reasoning without making changes.
+
+**Identity**: On-demand specialist with stellar logical reasoning and deep analysis.
+
+<ParamField path="model" type="string" default="gpt-5.2">
+  GPT model optimized for logical reasoning and analysis
+</ParamField>
+
+<ParamField path="mode" type="string" default="subagent">
+  Consultation-only agent, invoked by other agents or user
+</ParamField>
+
+<ParamField path="temperature" type="number" default="0.1">
+  Very low temperature for consistent, logical analysis
+</ParamField>
+
+<ParamField path="reasoningEffort" type="string" default="medium">
+  GPT reasoning effort for extended analysis (when using GPT models)
+</ParamField>
+
+<ParamField path="textVerbosity" type="string" default="high">
+  Detailed explanations for complex recommendations
+</ParamField>
+
+## Model Configuration
+
+### Default Model (GPT)
+
+```json
+{
+  "model": "gpt-5.2",
+  "variant": "high",
+  "temperature": 0.1,
+  "reasoningEffort": "medium",
+  "textVerbosity": "high"
+}
+```
+
+### Claude Variant
+
+```json
+{
+  "model": "claude-opus-4-6",
+  "variant": "max",
+  "temperature": 0.1,
+  "thinking": {
+    "type": "enabled",
+    "budgetTokens": 32000
+  }
+}
+```
+
+### Gemini Variant
+
+```json
+{
+  "model": "gemini-3.1-pro",
+  "variant": "high",
+  "temperature": 0.1
+}
+```
+
+## Fallback Chain
+
+Oracle prioritizes high-quality reasoning models:
+
+<ResponseField name="Primary" type="string">
+  `openai/gpt-5.2` (variant: high)
+</ResponseField>
+
+<ResponseField name="Fallback 1" type="string">
+  `google/gemini-3.1-pro` (variant: high)
+</ResponseField>
+
+<ResponseField name="Fallback 2" type="string">
+  `anthropic/claude-opus-4-6` (variant: max)
+</ResponseField>
+
+## Tool Permissions
+
+### Allowed Tools (Read-Only)
+
+- `read` - Read files
+- `grep` - Search file contents  
+- `glob` - Find files by pattern
+- `ast_grep` - AST-aware code search
+- `lsp_*` - All LSP tools for code intelligence
+- `bash` - Run read-only commands (git log, grep, etc.)
+
+### Blocked Tools (Write Operations)
+
+<ParamField path="write" type="string" default="deny">
+  Cannot create or overwrite files
+</ParamField>
+
+<ParamField path="edit" type="string" default="deny">
+  Cannot modify existing files
+</ParamField>
+
+<ParamField path="task" type="string" default="deny">
+  Cannot delegate to other agents
+</ParamField>
+
+<ParamField path="call_omo_agent" type="string" default="deny">
+  Cannot spawn other agents
+</ParamField>
+
+<Note>
+  Oracle is strictly read-only. It analyzes, advises, and recommends - but never implements. This ensures Oracle remains a pure consultant.
+</Note>
+
+## When to Use Oracle
+
+### Recommended Scenarios
+
+<Check>**Complex architecture design** - Multi-system tradeoffs, unfamiliar patterns</Check>
+<Check>**Self-review** - After completing significant implementation</Check>
+<Check>**Hard debugging** - After 2+ failed fix attempts</Check>
+<Check>**Security/performance concerns** - Critical decisions requiring deep analysis</Check>
+<Check>**Unfamiliar code patterns** - Understanding complex existing code</Check>
+
+### Avoid Oracle For
+
+<Warning>**Simple file operations** - Use direct tools instead</Warning>
+<Warning>**First attempt at any fix** - Try yourself first</Warning>
+<Warning>**Questions answerable from code you've read** - Don't over-consult</Warning>
+<Warning>**Trivial decisions** - Variable names, formatting, etc.</Warning>
+
+## Decision Framework
+
+Oracle applies **pragmatic minimalism** in all recommendations:
+
+### Bias Toward Simplicity
+
+The right solution is typically the least complex one that fulfills actual requirements.
+
+```typescript
+// User: "Should we use microservices for this feature?"
+
+// Oracle response:
+"Bottom line: No. A modular monolith is sufficient for your current scale.
+
+Reasoning:
+- Current traffic: 100 req/min (well within single-process capacity)
+- Team size: 3 developers (microservices add coordination overhead)
+- Deployment complexity: Would require Docker, K8s, service mesh
+- Current pain point: None - existing monolith performing well
+
+Recommendation: Organize code into clear module boundaries within monolith. 
+Revisit when traffic exceeds 10K req/min or team grows beyond 10 developers."
+```
+
+### Leverage What Exists
+
+Favor modifications to current code over new components:
+
+- Existing patterns and libraries
+- Established dependencies
+- Current infrastructure
+- New libraries/services require explicit justification
+
+### Prioritize Developer Experience
+
+Optimize for:
+- Readability and maintainability
+- Reduced cognitive load
+- Practical usability over theoretical purity
+
+### One Clear Path
+
+Present a single primary recommendation. Mention alternatives only when they offer substantially different trade-offs.
+
+### Signal the Investment
+
+Tag recommendations with effort estimates:
+
+- **Quick** ({`<`}1h)
+- **Short** (1-4h)
+- **Medium** (1-2d)
+- **Large** (3d+)
+
+## Response Structure
+
+Oracle organizes answers in three tiers:
+
+### Essential (Always Included)
+
+```markdown
+## Bottom Line
+2-3 sentences capturing the recommendation
+
+## Action Plan
+1. First concrete step (1-2 sentences)
+2. Second step
+3. ...
+
+## Effort Estimate
+Quick / Short / Medium / Large
+```
+
+### Expanded (When Relevant)
+
+```markdown
+## Why This Approach
+- Key trade-off 1
+- Key trade-off 2
+- Rationale for recommendation
+
+## Watch Out For
+- Risk 1 and mitigation
+- Risk 2 and mitigation
+- Edge case considerations
+```
+
+### Edge Cases (Only When Applicable)
+
+```markdown
+## Escalation Triggers
+Conditions that would justify a more complex solution:
+- Trigger 1 (e.g., "Traffic exceeds 50K req/min")
+- Trigger 2 (e.g., "Team grows beyond 15 developers")
+
+## Alternative Sketch
+High-level outline of advanced path (not full design)
+```
+
+## Usage Examples
+
+### Example 1: Architecture Review
+
+```typescript
+// After implementing authentication system
+
+task(
+  subagent_type="oracle",
+  run_in_background=false,
+  description="Review authentication implementation",
+  prompt="I just implemented JWT authentication for our API.
+          
+          Files changed:
+          - src/services/auth/token.ts (JWT generation/validation)
+          - src/middleware/auth.ts (Express middleware)
+          - src/routes/auth.ts (Login/register endpoints)
+          
+          Please review for:
+          1. Security vulnerabilities
+          2. Architecture issues
+          3. Performance concerns
+          4. Missing error handling"
+)
+
+// Oracle response:
+"## Bottom Line
+Implementation is fundamentally sound but has 2 critical security gaps 
+and 1 performance issue that need immediate attention.
+
+## Critical Issues
+
+1. **JWT secret in code** (Security - Critical)
+   - Location: token.ts:12
+   - Issue: Secret hardcoded as 'my-secret-key'
+   - Fix: Move to environment variable, use crypto.randomBytes(32)
+   - Effort: Quick (10min)
+
+2. **No token expiration validation** (Security - High)  
+   - Location: middleware/auth.ts:25
+   - Issue: Expired tokens still accepted
+   - Fix: Check exp claim, reject if Date.now() > exp
+   - Effort: Quick (15min)
+
+3. **Synchronous password hashing** (Performance - Medium)
+   - Location: routes/auth.ts:45
+   - Issue: bcrypt.hashSync blocks event loop
+   - Fix: Use bcrypt.hash (async) with await
+   - Effort: Quick (5min)
+
+## Additional Recommendations
+
+4. **Add rate limiting** (Security - Medium)
+   - Routes need rate limiting to prevent brute force
+   - Use express-rate-limit on /login and /register
+   - Effort: Short (30min)
+
+5. **Missing refresh token logic** (Architecture - Low)
+   - Only access tokens, no refresh mechanism
+   - Users must re-login every 15 minutes
+   - Consider: Add refresh token endpoint
+   - Effort: Medium (2-3h)
+
+## What's Good
+
+✓ Password hashing with bcrypt (proper salt rounds)
+✓ Token structure follows JWT standards
+✓ Middleware properly extracts from Authorization header
+✓ Error handling in routes is comprehensive
+
+## Next Steps
+
+1. Fix issues 1-3 immediately (Critical/High priority)
+2. Add rate limiting (#4) before deploying to production  
+3. Plan refresh token implementation (#5) for next sprint"
+```
+
+### Example 2: Debugging Assistance
+
+```typescript
+// After 3 failed attempts to fix race condition
+
+task(
+  subagent_type="oracle",
+  description="Debug race condition in user registration",
+  prompt="I'm hitting a race condition in user registration flow.
+          
+          Problem: Duplicate users created when rapid parallel registrations
+          
+          Attempts so far:
+          1. Added mutex lock - caused deadlock under load
+          2. Used database transaction - race still occurred  
+          3. Added optimistic locking - performance degraded badly
+          
+          Context:
+          - PostgreSQL database
+          - Express API with 4 worker processes (cluster mode)
+          - Registration flow: validate → check exists → create user
+          
+          Full code attached. What's the correct approach?"
+)
+
+// Oracle response:
+"## Bottom Line
+Your attempts addressed symptoms, not root cause. The issue is a 
+TIME-OF-CHECK to TIME-OF-USE (TOCTOU) race in the check-then-create 
+pattern. Fix: Use database-level unique constraint + INSERT conflict handling.
+
+## Root Cause Analysis
+
+The race happens here:
+```typescript
+// Thread 1 and Thread 2 both execute simultaneously
+const existingUser = await User.findOne({ email }) // Both see null
+if (!existingUser) {
+  await User.create({ email }) // Both create! 
+}
+```
+
+Window: 50-100ms between check and create
+Result: Both threads see "no user exists" and both create
+
+## Why Your Attempts Failed
+
+1. **Mutex lock** — Only works within single process
+   - You have 4 worker processes (cluster mode)
+   - Each process has its own mutex
+   - Race still possible across processes
+
+2. **Transaction** — Doesn't prevent race
+   - Transactions provide isolation AFTER lock acquired
+   - But both transactions can acquire locks before either creates
+   - Race occurs at application level, not database level
+
+3. **Optimistic locking** — Wrong pattern for this problem
+   - Optimistic locking is for UPDATE conflicts, not INSERT
+   - Added version field increased row size (performance hit)
+   - Doesn't solve check-then-create race
+
+## Correct Solution
+
+**Use database-level unique constraint + conflict handling**
+
+Effort: Quick (30min)
+
+### Action Plan
+
+1. Add unique index to database:
+   ```sql
+   CREATE UNIQUE INDEX idx_users_email ON users(email);
+   ```
+
+2. Remove the manual check:
+   ```typescript
+   // DELETE THIS:
+   const existingUser = await User.findOne({ email })
+   if (existingUser) throw new Error('Email exists')
+   ```
+
+3. Handle conflict on insert:
+   ```typescript
+   try {
+     const user = await User.create({ email, ...data })
+     return { user, created: true }
+   } catch (err) {
+     if (err.code === '23505') { // Postgres unique violation
+       throw new ConflictError('Email already registered')
+     }
+     throw err
+   }
+   ```
+
+## Why This Works
+
+- Database enforces uniqueness atomically
+- No TIME-OF-CHECK to TIME-OF-USE window
+- Works across all processes/instances
+- Fastest approach (single DB operation, not two)
+- Standard pattern for this exact problem
+
+## Watch Out For
+
+- **Migration**: Existing duplicate emails will break index creation
+  - Solution: Clean duplicates first, keep most recent
+- **Error messaging**: Distinguish between validation errors and conflicts
+  - Conflict: 409 status ("Email already registered") 
+  - Validation: 400 status ("Invalid email format")
+
+## Escalation Trigger
+
+If you need to prevent duplicate emails BEFORE database insert 
+(e.g., for UX - showing "email taken" on blur), use:
+- Debounced async validation (checks DB after 300ms pause)
+- Accept that race is still theoretically possible
+- Unique constraint remains as final enforcement"
+```
+
+### Example 3: Performance Analysis
+
+```typescript
+task(
+  subagent_type="oracle",
+  description="Analyze slow API endpoint",
+  prompt="Our GET /api/users endpoint is slow (800ms avg response time).
+          
+          Endpoint: Returns list of users with their recent activity
+          
+          Current implementation:
+          - Fetches all users from PostgreSQL
+          - For each user, queries activities table
+          - Joins with other tables for user details
+          
+          Users table: 50K rows
+          Activities table: 2M rows
+          
+          What's the bottleneck and how to fix?"
+)
+
+// Oracle response:
+"## Bottom Line
+Classic N+1 query problem. 50K users × 1 activity query = 50,001 total 
+queries. Fix with JOIN or separate bulk query. Target: {`<`}100ms response.
+
+## Action Plan
+
+1. **Replace N+1 with single JOIN** (Effort: Short - 1h)
+   ```sql
+   -- Current: 50,001 queries
+   SELECT * FROM users; -- 1 query
+   -- Then for each user:
+   SELECT * FROM activities WHERE user_id = ?; -- 50K queries
+   
+   -- Fixed: 1 query
+   SELECT 
+     u.*,
+     json_agg(a.*) as activities
+   FROM users u
+   LEFT JOIN activities a ON a.user_id = u.id
+   GROUP BY u.id;
+   ```
+
+2. **Add pagination** (Effort: Short - 2h)
+   - Returning 50K users is excessive
+   - Limit to 50 users per page
+   - Add cursor-based pagination
+
+3. **Add database index** (Effort: Quick - 10min)
+   ```sql
+   CREATE INDEX idx_activities_user_id ON activities(user_id);
+   ```
+
+4. **Consider caching** (Effort: Medium - 3h)
+   - Redis cache for user lists (5min TTL)
+   - Only if JOIN + pagination still slow
+
+## Performance Impact
+
+| Approach | Query Count | Estimated Response Time |
+|----------|-------------|-------------------------|
+| Current | 50,001 | 800ms |
+| + JOIN | 1 | ~200ms |
+| + Pagination | 1 | ~50ms |
+| + Index | 1 | ~20ms |
+| + Cache | 0-1 | ~5ms |
+
+## Immediate Next Steps
+
+1. Add index (10min, no code changes, immediate 3-4x speedup)
+2. Implement JOIN (1h, eliminates N+1)
+3. Add pagination (2h, reduces data transfer)
+4. Measure again — should be {`<`}100ms
+5. Add caching only if still slow"
+```
+
+## Output Verbosity
+
+Oracle follows strict verbosity constraints:
+
+<ResponseField name="Bottom line" type="string">
+  2-3 sentences maximum. No preamble.
+</ResponseField>
+
+<ResponseField name="Action plan" type="array">
+  ≤7 numbered steps. Each step ≤2 sentences.
+</ResponseField>
+
+<ResponseField name="Why this approach" type="array">
+  ≤4 bullets when included.
+</ResponseField>
+
+<ResponseField name="Watch out for" type="array">
+  ≤3 bullets when included.
+</ResponseField>
+
+<ResponseField name="Edge cases" type="array">
+  Only when genuinely applicable; ≤3 bullets.
+</ResponseField>
+
+## Configuration
+
+Customize Oracle in `oh-my-opencode.jsonc`:
+
+```jsonc
+{
+  "agents": {
+    "oracle": {
+      "model": "openai/gpt-5.2",
+      "variant": "high",
+      "temperature": 0.1,
+      "reasoningEffort": "medium",
+      "textVerbosity": "high",
+      "prompt_append": "Additional consultation guidelines...",
+      "disable": false
+    }
+  }
+}
+```
+
+## Best Practices
+
+<Check>**Consult after failures** - Use Oracle after 2-3 failed attempts</Check>
+<Check>**Provide full context** - Include code, error messages, what you tried</Check>
+<Check>**Request specific analysis** - Security, performance, architecture, etc.</Check>
+<Check>**Review after major changes** - Get Oracle's opinion on significant implementations</Check>
+
+<Warning>**Don't over-consult** - Oracle is for hard problems, not trivial questions</Warning>
+<Warning>**Don't skip self-attempts** - Try to solve it yourself first</Warning>
+<Warning>**Don't consult for write operations** - Oracle only advises, never implements</Warning>
+
+## Related Agents
+
+- [Sisyphus](/api/agents/sisyphus) - Orchestrator that consults Oracle for hard problems
+- [Hephaestus](/api/agents/hephaestus) - Autonomous worker that uses Oracle after 3 failures
+- [Prometheus](/api/agents/prometheus) - Planner (Oracle focuses on implementation review)

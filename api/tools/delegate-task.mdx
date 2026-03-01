@@ -1,0 +1,513 @@
+---
+title: task (Delegate Task)
+description: Category-based task delegation with automatic model selection and agent routing
+---
+
+## Overview
+
+The `task` tool delegates work to specialized agents using category-based or direct agent selection. Categories automatically select optimal models, while direct agent selection uses agent-specific fallback chains.
+
+**Source**: `src/tools/delegate-task/`
+
+## Tool Definition
+
+<ParamField path="load_skills" type="string[]" required>
+  Skill names to inject into delegated agent
+  
+  **REQUIRED**: Pass `[]` if no skills needed.
+  
+  Examples:
+  - `[]`: No skills
+  - `["mintlify"]`: Mintlify documentation skill
+  - `["git-master", "deploy"]`: Multiple skills
+</ParamField>
+
+<ParamField path="description" type="string" required>
+  Short task description (3-5 words)
+  
+  Example: `"Fix type errors"`, `"Add user auth"`
+</ParamField>
+
+<ParamField path="prompt" type="string" required>
+  Full detailed prompt for the agent
+  
+  **Must be in English**.
+  
+  Be explicit and detailed — agent has no context from parent session.
+</ParamField>
+
+<ParamField path="run_in_background" type="boolean" required>
+  Execution mode
+  
+  - `false`: Synchronous (waits for completion, returns full result)
+  - `true`: Asynchronous (returns task_id immediately, poll with `background_output`)
+  
+  **REQUIRED** — no default.
+  
+  **Use `true` ONLY for parallel exploration** with 5+ independent queries.
+</ParamField>
+
+<ParamField path="category" type="enum">
+  Task category for model selection
+  
+  **Required if `subagent_type` not provided**.
+  
+  Options:
+  - `visual-engineering`: Frontend, UI/UX, design, styling
+  - `ultrabrain`: Deep logical reasoning, hard problems
+  - `deep`: Autonomous problem-solving, thorough research
+  - `artistry`: Creative, unconventional approaches
+  - `quick`: Trivial tasks, simple fixes
+  - `unspecified-low`: Moderate effort, unclassifiable
+  - `unspecified-high`: High effort, unclassifiable
+  - `writing`: Documentation, prose, technical writing
+  
+  See [Categories](#categories) for details.
+</ParamField>
+
+<ParamField path="subagent_type" type="string">
+  Direct agent selection (bypasses category system)
+  
+  **Required if `category` not provided**.
+  
+  Options: `explore`, `librarian`, `oracle`, `metis`, `momus`, or any registered agent.
+  
+  **Do NOT provide both `category` and `subagent_type`**.
+</ParamField>
+
+<ParamField path="session_id" type="string">
+  Existing task session to continue
+  
+  Use when:
+  - Previous task failed/incomplete → `session_id` with "fix: [issue]"
+  - Need follow-up on result → `session_id` with additional question
+  - Multi-turn conversation → always use `session_id` instead of new task
+  
+  **Preserves full context** — saves tokens, maintains continuity.
+</ParamField>
+
+<ParamField path="command" type="string">
+  The command that triggered this task (optional)
+  
+  For slash command tracking.
+</ParamField>
+
+<ResponseField name="output" type="string">
+  Task result or background task info
+  
+  **Sync mode** (`run_in_background=false`):
+  ```
+  [Full agent response with all messages, tool calls, and final answer]
+  ```
+  
+  **Background mode** (`run_in_background=true`):
+  ```
+  Background task launched successfully.
+  
+  Task ID: bg-task-1234567890
+  Session ID: session-abc123
+  Description: Fix type errors
+  Agent: sisyphus-junior
+  Status: running
+  
+  The system will notify you when the task completes.
+  Use `background_output` tool with task_id="bg-task-1234567890" to check progress.
+  ```
+</ResponseField>
+
+## Categories
+
+Categories determine model selection and system prompts.
+
+### visual-engineering
+
+**Model**: `google/gemini-3.1-pro` (variant: `high`)
+
+**Best for**: Frontend, UI/UX, design, styling, animation
+
+**System prompt**: Design-first mindset, bold aesthetic choices, distinctive typography, high-impact animations.
+
+**Example**:
+```typescript
+task({
+  category: "visual-engineering",
+  load_skills: [],
+  description: "Redesign dashboard",
+  prompt: "Redesign the analytics dashboard with a modern, bold aesthetic. Use distinctive typography and high-impact animations.",
+  run_in_background: false
+})
+```
+
+---
+
+### ultrabrain
+
+**Model**: `openai/gpt-5.3-codex` (variant: `xhigh`)
+
+**Best for**: Deep logical reasoning, complex architecture, hard problems
+
+**System prompt**: Strategic advisor, bias toward simplicity, leverage existing patterns, readable code.
+
+**CRITICAL**: Give clear goals, NOT step-by-step instructions.
+
+**Example**:
+```typescript
+task({
+  category: "ultrabrain",
+  load_skills: [],
+  description: "Design caching layer",
+  prompt: "Design a distributed caching layer for our API. Requirements: sub-100ms latency, handle 10k req/s, survive node failures.",
+  run_in_background: false
+})
+```
+
+---
+
+### deep
+
+**Model**: `openai/gpt-5.3-codex` (variant: `medium`)
+
+**Best for**: Goal-oriented autonomous problem-solving, thorough research
+
+**System prompt**: Autonomous executor, extensive exploration before action, fix hairy problems.
+
+**CRITICAL**: Agent explores 5-15 minutes before acting. Give goal, NOT instructions.
+
+**Example**:
+```typescript
+task({
+  category: "deep",
+  load_skills: [],
+  description: "Fix memory leak",
+  prompt: "Fix the memory leak in the WebSocket server. It's been growing 100MB/hour under load.",
+  run_in_background: false
+})
+```
+
+---
+
+### artistry
+
+**Model**: `google/gemini-3.1-pro` (variant: `high`)
+
+**Best for**: Complex problem-solving with creative, unconventional approaches
+
+**System prompt**: Artistic genius, push beyond boundaries, surprise and delight.
+
+**Example**:
+```typescript
+task({
+  category: "artistry",
+  load_skills: [],
+  description: "Generate landing copy",
+  prompt: "Write landing page copy for a developer tool. Be bold, unconventional, memorable.",
+  run_in_background: false
+})
+```
+
+---
+
+### quick
+
+**Model**: `anthropic/claude-haiku-4-5`
+
+**Best for**: Trivial tasks, single file changes, typo fixes
+
+**System prompt**: Fast, focused, minimal overhead.
+
+**WARNING**: Less capable model. Prompts MUST be exhaustively explicit:
+
+```typescript
+task({
+  category: "quick",
+  load_skills: [],
+  description: "Fix typo",
+  prompt: `
+TASK: Fix typo in src/utils.ts line 42
+
+MUST DO:
+1. Read src/utils.ts
+2. Replace "proces" with "process" on line 42
+3. Verify change with read
+
+MUST NOT DO:
+- Do not modify any other lines
+- Do not add comments
+
+EXPECTED OUTPUT:
+- Single line change in src/utils.ts
+  `,
+  run_in_background: false
+})
+```
+
+---
+
+### unspecified-low
+
+**Model**: `anthropic/claude-sonnet-4-6`
+
+**Best for**: Tasks that don't fit other categories, moderate effort
+
+**Selection gate**: Use ONLY if task doesn't fit any other category AND requires moderate effort.
+
+---
+
+### unspecified-high
+
+**Model**: `anthropic/claude-opus-4-6` (variant: `max`)
+
+**Best for**: Tasks that don't fit other categories, substantial effort
+
+**Selection gate**: Use ONLY if task doesn't fit any other category AND requires high effort across multiple systems.
+
+---
+
+### writing
+
+**Model**: `kimi-for-coding/k2p5`
+
+**Best for**: Documentation, prose, technical writing, READMEs
+
+**System prompt**: Clear prose, engaging, anti-AI-slop rules (no em dashes, no corporate phrases).
+
+**Example**:
+```typescript
+task({
+  category: "writing",
+  load_skills: ["mintlify"],
+  description: "Write API docs",
+  prompt: "Write comprehensive API documentation for the user authentication endpoints. Include examples, error codes, and rate limits.",
+  run_in_background: false
+})
+```
+
+## Usage Examples
+
+### Category-Based Delegation
+
+```typescript
+task({
+  category: "quick",
+  load_skills: [],
+  description: "Fix import error",
+  prompt: "Fix the missing import for 'logger' in src/utils.ts",
+  run_in_background: false
+})
+```
+
+### Direct Agent Selection
+
+```typescript
+task({
+  subagent_type: "explore",
+  load_skills: [],
+  description: "Find React patterns",
+  prompt: "Search the codebase for React component patterns and summarize common approaches.",
+  run_in_background: true
+})
+```
+
+### Session Continuation
+
+```typescript
+// First task
+const result1 = task({
+  category: "deep",
+  load_skills: [],
+  description: "Implement auth",
+  prompt: "Implement user authentication with JWT tokens.",
+  run_in_background: false
+})
+// Extract session_id from result metadata
+
+// Continue session
+task({
+  category: "deep",
+  load_skills: [],
+  description: "Add refresh tokens",
+  prompt: "Add refresh token support to the authentication system.",
+  run_in_background: false,
+  session_id: "session-abc123"  // From first task
+})
+```
+
+### Parallel Background Tasks
+
+```typescript
+// Launch multiple agents in parallel
+task({
+  subagent_type: "explore",
+  load_skills: [],
+  description: "Find API patterns",
+  prompt: "Search for API endpoint patterns.",
+  run_in_background: true
+})
+
+task({
+  subagent_type: "librarian",
+  load_skills: [],
+  description: "Research REST best practices",
+  prompt: "Find REST API best practices documentation.",
+  run_in_background: true
+})
+
+// Poll results with background_output
+```
+
+### With Skills
+
+```typescript
+task({
+  category: "writing",
+  load_skills: ["mintlify", "doc-author"],
+  description: "Write API reference",
+  prompt: "Write API reference documentation for the tools/ directory using Mintlify format.",
+  run_in_background: false
+})
+```
+
+## Model Selection
+
+Model resolution follows this priority:
+
+1. **Category model override** (if category provided)
+2. **Category default** (from config or built-in)
+3. **Provider fallback** (if model unavailable)
+4. **System default** (from OpenCode config)
+
+**Example resolution**:
+
+```typescript
+// User requests:
+category: "ultrabrain"
+
+// Resolution:
+1. Check category config: "ultrabrain" → "openai/gpt-5.3-codex" (variant: "xhigh")
+2. Check model availability: ✅ Available
+3. Use: "openai/gpt-5.3-codex" with variant "xhigh"
+
+// If unavailable:
+1. Check category config: "ultrabrain" → "openai/gpt-5.3-codex" (variant: "xhigh")
+2. Check model availability: ❌ Not available
+3. Fallback to provider chain: OpenAI → Claude → Gemini → ...
+4. Use first available model with appropriate effort level
+```
+
+## Execution Modes
+
+### Synchronous (run_in_background=false)
+
+1. Create new session
+2. Send prompt to agent
+3. Poll session until idle
+4. Return full result
+
+**Pros**: Immediate result, full context
+**Cons**: Blocks until completion
+
+### Asynchronous (run_in_background=true)
+
+1. Launch background task
+2. Return task_id immediately
+3. System notifies on completion
+4. Poll with `background_output` if needed
+
+**Pros**: Non-blocking, parallel execution
+**Cons**: Requires polling for result
+
+## Error Handling
+
+### Missing Required Parameter
+
+```
+Invalid arguments: 'run_in_background' parameter is REQUIRED.
+```
+
+**Fix**: Always provide `run_in_background`.
+
+### Missing Category and Subagent
+
+```
+Invalid arguments: Must provide either category or subagent_type.
+```
+
+**Fix**: Provide one (not both).
+
+### Model Unavailable
+
+```
+[Model fallback] openai/gpt-5.3-codex unavailable, using anthropic/claude-opus-4-6
+```
+
+**Note**: Automatic fallback, task continues.
+
+### Session Start Timeout
+
+```
+Task entered error state.
+
+Task ID: bg-task-1234567890
+```
+
+**Cause**: Background session failed to start within 30s.
+
+## Configuration
+
+Customize categories in `.opencode/oh-my-opencode.jsonc`:
+
+```jsonc
+{
+  "categories": {
+    "quick": {
+      "model": "anthropic/claude-haiku-4-5",
+      "description": "Trivial tasks"
+    },
+    "custom-category": {
+      "model": "openai/gpt-5.3-codex",
+      "variant": "medium",
+      "description": "Custom workflow"
+    }
+  }
+}
+```
+
+## Best Practices
+
+### ✅ Do
+
+- **Use sync mode** for sequential work (default workflow)
+- **Use background mode** ONLY for parallel exploration (5+ queries)
+- **Provide explicit prompts** for `quick` category (less capable model)
+- **Give goals, not steps** for `ultrabrain` and `deep` categories
+- **Use session continuation** for follow-up work (preserves context)
+- **Load relevant skills** to inject domain knowledge
+
+### ❌ Don't
+
+- **Don't use background mode** for sequential tasks
+- **Don't provide both** `category` and `subagent_type`
+- **Don't omit `run_in_background`** — it's required
+- **Don't assume agent has parent context** — prompts must be self-contained
+- **Don't use `quick` for complex tasks** — model has limited reasoning
+
+## Related Tools
+
+- **background_output**: Poll background task results
+- **call_omo_agent**: Direct agent invocation (similar interface)
+- **task_create**: Create TODO task (different from delegation)
+
+## Source Files
+
+| File | Purpose |
+|------|----------|
+| `tools.ts:28` | Tool factory and main entry point |
+| `executor.ts` | Route to sync/background execution |
+| `constants.ts:210` | Category definitions and models |
+| `category-resolver.ts` | Resolve category → model config |
+| `subagent-resolver.ts` | Resolve subagent_type → agent |
+| `model-selection.ts` | Model availability checking |
+| `skill-resolver.ts` | Resolve load_skills → content |
+| `prompt-builder.ts` | Build system/user prompts |
+| `sync-task.ts` | Synchronous execution flow |
+| `background-task.ts` | Background execution flow |

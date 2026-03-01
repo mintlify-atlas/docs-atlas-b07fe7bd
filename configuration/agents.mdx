@@ -1,0 +1,482 @@
+---
+title: Agent Configuration
+description: Configure all 11 agents with model overrides, temperature settings, prompts, and permissions
+---
+
+## Available Agents
+
+oh-my-opencode provides **11 built-in agents**, each optimized for specific tasks:
+
+| Agent | Default Model | Temperature | Mode | Purpose |
+|-------|---------------|-------------|------|----------|
+| **sisyphus** | `claude-opus-4-6` | 0.1 | primary | Main orchestrator, plans & delegates |
+| **hephaestus** | `gpt-5.3-codex` | 0.1 | primary | Autonomous deep worker |
+| **prometheus** | `claude-opus-4-6` | 0.1 | — | Strategic planner (internal) |
+| **metis** | `claude-opus-4-6` | 0.3 | subagent | Pre-planning consultant |
+| **momus** | `gpt-5.2` | 0.1 | subagent | Plan reviewer |
+| **oracle** | `gpt-5.2` | 0.1 | subagent | Read-only consultation |
+| **librarian** | `glm-4.7` | 0.1 | subagent | External docs/code search |
+| **explore** | `grok-code-fast-1` | 0.1 | subagent | Contextual grep |
+| **multimodal-looker** | `gemini-3-flash` | 0.1 | subagent | PDF/image analysis |
+| **atlas** | `claude-sonnet-4-6` | 0.1 | primary | Todo-list orchestrator |
+| **sisyphus-junior** | `claude-sonnet-4-6` | 0.1 | all | Category-spawned executor |
+
+## Agent Modes
+
+<ParamField path="mode" type="enum">
+  Controls how the agent resolves its model:
+  
+  - `primary`: Respects UI-selected model, uses fallback chain
+  - `subagent`: Uses own fallback chain, ignores UI selection
+  - `all`: Available in both contexts (Sisyphus-Junior only)
+</ParamField>
+
+## Basic Configuration
+
+Configure agents under the `agents` key:
+
+```jsonc
+{
+  "agents": {
+    "explore": { 
+      "model": "anthropic/claude-haiku-4-5", 
+      "temperature": 0.5 
+    },
+    "multimodal-looker": { 
+      "disable": true 
+    }
+  }
+}
+```
+
+## Agent Options
+
+All agents support these configuration options:
+
+### Model Selection
+
+<ParamField path="model" type="string">
+  Model override in `provider/model` format.
+  
+  ```jsonc
+  "sisyphus": { "model": "anthropic/claude-opus-4-6" }
+  ```
+</ParamField>
+
+<ParamField path="category" type="string">
+  Inherit model from a category instead of specifying directly.
+  
+  ```jsonc
+  "oracle": { "category": "ultrabrain" }
+  ```
+</ParamField>
+
+<ParamField path="variant" type="enum">
+  Model variant for thinking budget. Options: `max`, `xhigh`, `high`, `medium`, `low`
+  
+  ```jsonc
+  "sisyphus": { "variant": "max" }
+  ```
+</ParamField>
+
+<ParamField path="fallback_models" type="string | string[]">
+  Fallback models on API errors. Used with `runtime_fallback`.
+  
+  ```jsonc
+  "sisyphus": {
+    "model": "anthropic/claude-opus-4-6",
+    "fallback_models": ["openai/gpt-5.2", "google/gemini-3-pro"]
+  }
+  ```
+</ParamField>
+
+### Sampling Parameters
+
+<ParamField path="temperature" type="number" default="0.1">
+  Sampling temperature (0.0–2.0). Higher = more creative.
+  
+  ```jsonc
+  "metis": { "temperature": 0.3 }
+  ```
+</ParamField>
+
+<ParamField path="top_p" type="number">
+  Top-p sampling (0.0–1.0). Alternative to temperature.
+  
+  ```jsonc
+  "explore": { "top_p": 0.9 }
+  ```
+</ParamField>
+
+### Prompts
+
+<ParamField path="prompt" type="string">
+  Replace the entire system prompt.
+  
+  ```jsonc
+  "oracle": {
+    "prompt": "You are an expert architect. Provide read-only consultation."
+  }
+  ```
+</ParamField>
+
+<ParamField path="prompt_append" type="string">
+  Append text to the system prompt. Supports `file://` URIs.
+  
+  **Inline text:**
+  ```jsonc
+  "prometheus": {
+    "prompt_append": "Leverage deep & quick agents heavily, always in parallel."
+  }
+  ```
+  
+  **Absolute path:**
+  ```jsonc
+  "sisyphus": {
+    "prompt_append": "file:///home/user/prompts/sisyphus-custom.md"
+  }
+  ```
+  
+  **Relative path:**
+  ```jsonc
+  "oracle": {
+    "prompt_append": "file://./prompts/oracle.md"
+  }
+  ```
+  
+  **Home directory:**
+  ```jsonc
+  "librarian": {
+    "prompt_append": "file://~/.config/opencode/librarian-prompt.md"
+  }
+  ```
+</ParamField>
+
+### Response Control
+
+<ParamField path="maxTokens" type="number">
+  Maximum tokens for response. Passed directly to OpenCode SDK.
+  
+  ```jsonc
+  "hephaestus": { "maxTokens": 8000 }
+  ```
+</ParamField>
+
+<ParamField path="textVerbosity" type="enum">
+  Text verbosity level: `low`, `medium`, `high`
+  
+  ```jsonc
+  "explore": { "textVerbosity": "low" }
+  ```
+</ParamField>
+
+### Thinking Configuration
+
+<ParamField path="thinking" type="object">
+  Anthropic extended thinking configuration.
+  
+  ```jsonc
+  "oracle": {
+    "thinking": { 
+      "type": "enabled", 
+      "budgetTokens": 200000 
+    }
+  }
+  ```
+  
+  **Fields:**
+  - `type`: `"enabled"` or `"disabled"`
+  - `budgetTokens`: Maximum thinking tokens (optional)
+</ParamField>
+
+<ParamField path="reasoningEffort" type="enum">
+  OpenAI reasoning effort: `low`, `medium`, `high`, `xhigh`
+  
+  ```jsonc
+  "hephaestus": { "reasoningEffort": "high" }
+  ```
+</ParamField>
+
+### Ultrawork Override
+
+<ParamField path="ultrawork" type="object">
+  Per-message model/variant override when user says "ultrawork".
+  
+  ```jsonc
+  "sisyphus": {
+    "model": "kimi-for-coding/k2p5",
+    "ultrawork": { 
+      "model": "anthropic/claude-opus-4-6", 
+      "variant": "max" 
+    }
+  }
+  ```
+</ParamField>
+
+### Other Options
+
+<ParamField path="disable" type="boolean" default={false}>
+  Disable this agent entirely.
+  
+  ```jsonc
+  "multimodal-looker": { "disable": true }
+  ```
+</ParamField>
+
+<ParamField path="description" type="string">
+  Human-readable description shown in agent selection.
+  
+  ```jsonc
+  "oracle": {
+    "description": "Expert architect for read-only consultation"
+  }
+  ```
+</ParamField>
+
+<ParamField path="color" type="string">
+  UI color in hex format (`#RRGGBB`).
+  
+  ```jsonc
+  "sisyphus": { "color": "#4A90E2" }
+  ```
+</ParamField>
+
+<ParamField path="providerOptions" type="object">
+  Provider-specific options. Passed directly to OpenCode SDK.
+  
+  ```jsonc
+  "hephaestus": {
+    "providerOptions": {
+      "anthropic": { "topK": 50 }
+    }
+  }
+  ```
+</ParamField>
+
+## Tool Permissions
+
+Control what tools an agent can use:
+
+```jsonc
+{
+  "agents": {
+    "explore": {
+      "permission": {
+        "edit": "deny",
+        "bash": "ask",
+        "webfetch": "allow",
+        "task": "deny",
+        "doom_loop": "deny",
+        "external_directory": "ask"
+      }
+    }
+  }
+}
+```
+
+### Permission Values
+
+<ParamField path="permission.edit" type="enum">
+  File editing permission: `ask`, `allow`, `deny`
+</ParamField>
+
+<ParamField path="permission.bash" type="enum | object">
+  Bash command permission. Can be:
+  - Global: `"ask"`, `"allow"`, `"deny"`
+  - Per-command:
+  
+  ```jsonc
+  "bash": {
+    "git": "allow",
+    "rm": "deny",
+    "npm": "ask"
+  }
+  ```
+</ParamField>
+
+<ParamField path="permission.webfetch" type="enum">
+  Web fetch permission: `ask`, `allow`, `deny`
+</ParamField>
+
+<ParamField path="permission.task" type="enum">
+  Task delegation permission: `ask`, `allow`, `deny`
+</ParamField>
+
+<ParamField path="permission.doom_loop" type="enum">
+  Doom loop prevention: `ask`, `allow`, `deny`
+</ParamField>
+
+<ParamField path="permission.external_directory" type="enum">
+  Access to directories outside workspace: `ask`, `allow`, `deny`
+</ParamField>
+
+## Tool Restrictions
+
+Limit which tools an agent can use:
+
+```jsonc
+{
+  "agents": {
+    "oracle": {
+      "tools": {
+        "read": true,
+        "grep": true,
+        "glob": true,
+        "bash": true,
+        "write": false,
+        "edit": false,
+        "task": false
+      }
+    }
+  }
+}
+```
+
+### Built-in Tool Restrictions
+
+Some agents have default tool restrictions:
+
+| Agent | Denied Tools |
+|-------|-------------|
+| oracle | write, edit, task, call_omo_agent |
+| librarian | write, edit, task, call_omo_agent |
+| explore | write, edit, task, call_omo_agent |
+| multimodal-looker | ALL except read |
+| atlas | task, call_omo_agent |
+| momus | write, edit, task |
+
+## Skill Injection
+
+Inject skills into an agent's prompt:
+
+```jsonc
+{
+  "agents": {
+    "hephaestus": {
+      "skills": ["git-master", "playwright"]
+    }
+  }
+}
+```
+
+## Disabling Agents
+
+Two ways to disable agents:
+
+**Method 1: Per-agent `disable`**
+```jsonc
+{
+  "agents": {
+    "multimodal-looker": { "disable": true }
+  }
+}
+```
+
+**Method 2: Global `disabled_agents` array**
+```jsonc
+{
+  "disabled_agents": ["oracle", "multimodal-looker"]
+}
+```
+
+## Hephaestus Special Configuration
+
+Hephaestus is optimized for GPT models. Non-GPT models are blocked by default.
+
+<ParamField path="agents.hephaestus.allow_non_gpt_model" type="boolean" default={false}>
+  Allow non-GPT models for Hephaestus.
+  
+  ```jsonc
+  "hephaestus": {
+    "model": "anthropic/claude-opus-4-6",
+    "allow_non_gpt_model": true
+  }
+  ```
+  
+  <Warning>
+    Hephaestus is tuned for GPT models. Using non-GPT models may degrade performance.
+  </Warning>
+</ParamField>
+
+## Complete Example
+
+A comprehensive agent configuration:
+
+```jsonc
+{
+  "agents": {
+    // Main orchestrator with ultrawork boost
+    "sisyphus": {
+      "model": "kimi-for-coding/k2p5",
+      "temperature": 0.1,
+      "variant": "medium",
+      "ultrawork": {
+        "model": "anthropic/claude-opus-4-6",
+        "variant": "max"
+      },
+      "fallback_models": ["openai/gpt-5.2", "google/gemini-3-pro"],
+      "prompt_append": "file://./prompts/sisyphus-guidance.md"
+    },
+
+    // Autonomous worker
+    "hephaestus": {
+      "model": "openai/gpt-5.3-codex",
+      "variant": "high",
+      "reasoningEffort": "high",
+      "maxTokens": 8000,
+      "skills": ["git-master"]
+    },
+
+    // Read-only consultant
+    "oracle": {
+      "model": "openai/gpt-5.2",
+      "thinking": {
+        "type": "enabled",
+        "budgetTokens": 200000
+      },
+      "permission": {
+        "edit": "deny",
+        "write": "deny",
+        "bash": {
+          "git": "allow",
+          "ls": "allow"
+        }
+      },
+      "tools": {
+        "read": true,
+        "grep": true,
+        "task": false
+      }
+    },
+
+    // Code search specialist
+    "explore": {
+      "model": "github-copilot/grok-code-fast-1",
+      "textVerbosity": "low",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
+      }
+    },
+
+    // Disable multimodal agent
+    "multimodal-looker": {
+      "disable": true
+    }
+  },
+
+  // Alternative: disable multiple agents globally
+  "disabled_agents": ["momus"]
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Categories" icon="grid-2" href="/configuration/categories">
+    Configure domain-specific model delegation
+  </Card>
+  <Card title="Runtime Fallback" icon="rotate" href="/configuration/advanced#runtime-fallback">
+    Auto-switch models on API errors
+  </Card>
+</CardGroup>

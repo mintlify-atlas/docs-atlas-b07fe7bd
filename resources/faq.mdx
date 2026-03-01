@@ -1,0 +1,690 @@
+---
+title: FAQ
+description: Frequently asked questions about Oh My OpenCode
+---
+
+Frequently asked questions from GitHub issues and the community.
+
+## General
+
+<AccordionGroup>
+  <Accordion title="What is Oh My OpenCode?">
+    Oh My OpenCode (OmO) is an OpenCode plugin that extends Claude Code's fork with multi-agent orchestration, 46 lifecycle hooks, 26 tools, and full Claude Code compatibility.
+
+    Key features:
+    - Multi-model orchestration (Claude, GPT, Gemini, Kimi, GLM)
+    - Discipline agents (Sisyphus, Hephaestus, Prometheus, Oracle)
+    - Hash-anchored edit tool for zero stale-line errors
+    - Background agent system for parallel execution
+    - Built-in MCPs for web search, docs, and GitHub code search
+    - Full Claude Code compatibility (hooks, commands, skills, MCPs)
+
+    Learn more: [Overview](/guide/overview)
+  </Accordion>
+
+  <Accordion title="How is this different from Claude Code?">
+    Oh My OpenCode is built **on top of** OpenCode (Claude Code fork) and adds:
+
+    | Feature | Claude Code | Oh My OpenCode |
+    |---------|-------------|----------------|
+    | Multi-model orchestration | ❌ | ✅ (8+ providers) |
+    | Specialized agents | ❌ | ✅ (11 agents) |
+    | Hash-anchored edits | ❌ | ✅ (LINE#ID) |
+    | Background agents | ❌ | ✅ (5+ parallel) |
+    | Built-in MCPs | ❌ | ✅ (3 remote) |
+    | Strategic planning | ❌ | ✅ (Prometheus) |
+    | Todo enforcement | ❌ | ✅ |
+    | Comment checker | ❌ | ✅ |
+    | Tmux integration | ❌ | ✅ |
+
+    Claude Code is the foundation. OmO extends it with production-grade orchestration.
+  </Accordion>
+
+  <Accordion title="Do I need Claude Pro/Max subscription?">
+    **Short answer**: Highly recommended but not required.
+
+    **Long answer**:
+    - **Sisyphus** (main orchestrator) works best with Claude Opus 4.6
+    - Without Claude, fallback chain is: Kimi K2.5 → GPT-5.2 → GLM 5 → free models
+    - With only ChatGPT Plus: GPT-5.3-codex works well for coding tasks
+    - With only Gemini: Acceptable for visual/frontend work
+
+    <Warning>
+    Using models other than Claude Opus for Sisyphus may result in significantly degraded experience.
+    </Warning>
+
+    See [Agent Model Matching](/guide/agent-model-matching) for subscription recommendations.
+  </Accordion>
+
+  <Accordion title="Can I use free models only?">
+    Yes. The installer configures agents to use free-tier models when no subscriptions are available:
+
+    | Agent | Free Model |
+    |-------|------------|
+    | Sisyphus | `opencode/big-pickle` (GLM 4.6 free) |
+    | Oracle | `opencode/gpt-5-nano` |
+    | Explore | `opencode/minimax-m2.5-free` |
+    | Librarian | `opencode/minimax-m2.5-free` |
+
+    <Info>
+    Free models are rate-limited and less capable than paid models. Expect slower performance and less accurate results.
+    </Info>
+  </Accordion>
+
+  <Accordion title="What's the relationship with AmpCode?">
+    Oh My OpenCode takes heavy inspiration from [AmpCode](https://ampcode.com) features:
+    - Background agent system
+    - Todo continuation enforcement
+    - Strategic planning workflow
+
+    Many features are ported and improved. The author explicitly acknowledges AmpCode as a major influence.
+
+    No official affiliation exists between the projects.
+  </Accordion>
+
+  <Accordion title="Why was OpenCode blocked by Anthropic?">
+    According to the project author, Anthropic [blocked OpenCode](https://x.com/thdxr/status/2010149530486911014) because of this plugin's multi-model orchestration capabilities.
+
+    This is why Hephaestus is called "The Legitimate Craftsman" - the irony is intentional.
+
+    Oh My OpenCode continues to support Claude through:
+    - Native Anthropic API (with your own API key)
+    - Claude Pro/Max OAuth (when available)
+    - GitHub Copilot proxy (routes to Claude Opus)
+    - OpenCode Zen (community-provided access)
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Installation & Setup
+
+<AccordionGroup>
+  <Accordion title="How do I install Oh My OpenCode?">
+    **For humans**: Paste this into your LLM agent session:
+
+    ```text
+    Install and configure oh-my-opencode by following the instructions here:
+    https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/refs/heads/dev/docs/guide/installation.md
+    ```
+
+    **For manual installation**:
+
+    ```bash
+    bunx oh-my-opencode install
+    # or
+    npx oh-my-opencode install
+    ```
+
+    See [Installation Guide](/guide/installation) for detailed steps.
+  </Accordion>
+
+  <Accordion title="Which package manager should I use?">
+    **For plugin usage**: Any package manager works (npm, bun, yarn).
+
+    **For development**: **Bun only**. The project uses:
+    - `bun-types` instead of `@types/node`
+    - Bun test framework
+    - Bun build system
+
+    <Warning>
+    Using npm/yarn for development will cause type errors and test failures.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="How do I test local changes?">
+    1. Build the project:
+
+    ```bash
+    bun run build
+    ```
+
+    2. Update `~/.config/opencode/opencode.json`:
+
+    ```json
+    {
+      "plugin": [
+        "file:///absolute/path/to/oh-my-opencode/dist/index.js"
+      ]
+    }
+    ```
+
+    3. Restart OpenCode
+
+    See [Contributing Guide](/resources/contributing) for more details.
+  </Accordion>
+
+  <Accordion title="Can I use both oh-my-opencode and the npm version?">
+    No. Remove one from the plugin array:
+
+    ```json
+    {
+      "plugin": [
+        "file:///path/to/local/dist/index.js"
+        // Don't include "oh-my-opencode" here
+      ]
+    }
+    ```
+
+    Using both will cause conflicts and duplicate hooks.
+  </Accordion>
+
+  <Accordion title="Where are configuration files located?">
+    Configuration follows a multi-level priority system:
+
+    1. **Project**: `.opencode/oh-my-opencode.jsonc` (or `.json`)
+    2. **User**: `~/.config/opencode/oh-my-opencode.jsonc` (or `.json`)
+    3. **Defaults**: Built into plugin
+
+    Project config overrides user config, which overrides defaults.
+
+    See [Configuration Reference](/reference/configuration) for details.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Usage
+
+<AccordionGroup>
+  <Accordion title="What does 'ultrawork' do?">
+    `ultrawork` (or `ulw`) activates the full agent orchestration system:
+
+    1. Sisyphus agent takes control
+    2. Researches your codebase
+    3. Delegates to specialized agents (Oracle, Librarian, Explore)
+    4. Executes in parallel where possible
+    5. Doesn't stop until task is complete
+
+    Usage:
+
+    ```text
+    ultrawork add authentication to the API
+    ulw fix all TypeScript errors
+    ```
+
+    No configuration needed. Just include the keyword in your prompt.
+  </Accordion>
+
+  <Accordion title="How do I use Prometheus planning mode?">
+    Press **Tab** in OpenCode to enter planner mode, or use `/start-work`:
+
+    1. Prometheus interviews you about the task
+    2. Asks clarifying questions based on codebase analysis
+    3. Generates a detailed work plan
+    4. Metis reviews the plan for gaps
+    5. Momus verifies acceptance criteria
+    6. Sisyphus executes the plan
+
+    This is best for complex tasks where upfront planning saves rework.
+
+    See [Orchestration Guide](/guide/orchestration) for workflow details.
+  </Accordion>
+
+  <Accordion title="Can I use specific agents directly?">
+    Yes, but not recommended. The orchestration system automatically delegates to the right agent based on task category.
+
+    If you must:
+
+    ```bash
+    opencode --agent oracle "why is this component re-rendering?"
+    ```
+
+    Available agents: `sisyphus`, `hephaestus`, `oracle`, `prometheus`, `librarian`, `explore`, `metis`, `momus`, `atlas`, `multimodal-looker`, `sisyphus-junior`
+  </Accordion>
+
+  <Accordion title="What are categories and how do they work?">
+    Categories map task types to optimal models:
+
+    | Category | Task Type | Default Model |
+    |----------|-----------|---------------|
+    | `visual-engineering` | Frontend, UI/UX | Gemini 3 Pro |
+    | `deep` | Research + execution | GPT-5.3-codex |
+    | `quick` | Simple fixes | Claude Haiku |
+    | `ultrabrain` | Architecture decisions | GPT-5.2 |
+
+    The agent picks the category. The harness picks the model. You touch nothing.
+
+    Override in config:
+
+    ```jsonc
+    {
+      "categories": {
+        "visual-engineering": {
+          "model": "anthropic/claude-opus-4-6"
+        }
+      }
+    }
+    ```
+
+    See [Configuration Reference](/reference/configuration#categories).
+  </Accordion>
+
+  <Accordion title="How do background agents work?">
+    Background agents run research tasks in parallel without blocking the main agent:
+
+    1. Main agent identifies research needs
+    2. Spawns background agents (up to 5 per provider)
+    3. Continues working on implementation
+    4. Consumes research results when ready
+
+    Example: While Sisyphus implements a feature, Librarian searches docs and Explore greps the codebase in parallel.
+
+    Configure concurrency:
+
+    ```jsonc
+    {
+      "background_agent": {
+        "max_concurrent_per_model_or_provider": 5
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="What's the Ralph Loop?">
+    Ralph Loop (`/ulw-loop`) is self-referential task execution:
+
+    1. Agent works on task
+    2. Evaluates own progress
+    3. If not 100% done, continues
+    4. Repeats until completion
+
+    It's named "Ralph" after the [self-referential loop concept](https://en.wikipedia.org/wiki/Strange_loop).
+
+    Usage:
+
+    ```text
+    /ulw-loop refactor the entire auth system
+    ```
+
+    <Warning>
+    Ralph Loop doesn't stop until the task is 100% complete. Make sure your task is well-defined.
+    </Warning>
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Features
+
+<AccordionGroup>
+  <Accordion title="What is hash-anchored editing?">
+    Every line the agent reads gets tagged with a content hash:
+
+    ```text
+    11#VK| function hello() {
+    22#XJ|   return "world";
+    33#MB| }
+    ```
+
+    The agent references these tags when editing. If the file changed since the last read, the hash won't match and the edit is rejected.
+
+    **Benefits**:
+    - Zero stale-line errors
+    - No whitespace reproduction issues
+    - Surgical precision edits
+
+    Inspired by [oh-my-pi](https://github.com/can1357/oh-my-pi). See [The Harness Problem](https://blog.can.ac/2026/02/12/the-harness-problem/) for why this matters.
+  </Accordion>
+
+  <Accordion title="How does the todo enforcer work?">
+    When an agent marks a task as "done" but todos remain:
+
+    1. System detects incomplete todos
+    2. Automatically sends agent back to work
+    3. Prevents "I'm done" lies
+    4. Continues until all todos are actually complete
+
+    Disable if needed:
+
+    ```jsonc
+    {
+      "disabled_hooks": ["todo-continuation-hook"]
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="What's IntentGate?">
+    IntentGate analyzes true user intent before classifying or acting:
+
+    - Prevents literal misinterpretations
+    - Understands context beyond keywords
+    - Routes to appropriate agent/category
+
+    Example:
+    - User: "this is broken"
+    - Without IntentGate: Generic response
+    - With IntentGate: Analyzes context, determines user wants debugging, routes to Oracle
+
+    Mentioned in [Terminal Bench](https://factory.ai/news/terminal-bench) research.
+  </Accordion>
+
+  <Accordion title="What MCPs are built-in?">
+    Three remote HTTP MCPs are always available:
+
+    1. **websearch**: Exa (default) or Tavily for web search
+    2. **context7**: Official documentation lookup
+    3. **grep_app**: GitHub code search
+
+    Configure Exa API key:
+
+    ```jsonc
+    {
+      "mcp_websearch_provider": "exa",
+      "mcp_websearch_exa_api_key": "your-key-here"
+    }
+    ```
+
+    See [Features Reference](/reference/features#built-in-mcps).
+  </Accordion>
+
+  <Accordion title="Can I add custom skills?">
+    Yes. Create a skill directory:
+
+    ```bash
+    # Project-level
+    .opencode/skills/my-skill/SKILL.md
+
+    # User-level
+    ~/.config/opencode/skills/my-skill/SKILL.md
+    ```
+
+    Skills can include:
+    - System instructions
+    - Embedded MCP servers
+    - Tool permissions
+    - Example prompts
+
+    See [Skill System Documentation](/reference/features#skills).
+  </Accordion>
+
+  <Accordion title="What's /init-deep?">
+    `/init-deep` auto-generates hierarchical `AGENTS.md` files throughout your project:
+
+    ```text
+    project/
+    ├── AGENTS.md              ← project-wide context
+    ├── src/
+    │   ├── AGENTS.md          ← src-specific context
+    │   └── components/
+    │       └── AGENTS.md      ← component-specific context
+    ```
+
+    Agents auto-read relevant context based on working directory.
+
+    Benefits:
+    - Better token efficiency
+    - More accurate context
+    - Zero manual management
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Why isn't Sisyphus working well?">
+    Most likely: Not using Claude Opus 4.6.
+
+    <Warning>
+    Sisyphus is heavily optimized for Claude Opus 4.6. Other models degrade performance significantly.
+    </Warning>
+
+    Check your model:
+
+    ```bash
+    cat ~/.config/opencode/oh-my-opencode.json | grep sisyphus -A 3
+    ```
+
+    Recommended fallback chain:
+    ```text
+    Claude Opus 4.6 (max20) → Kimi K2.5 → GLM 5
+    ```
+
+    See [Troubleshooting](/resources/troubleshooting#sisyphus-not-working-properly).
+  </Accordion>
+
+  <Accordion title="Ollama streaming errors?">
+    Problem: "JSON Parse error: Unexpected EOF" with Ollama.
+
+    Solution: Disable streaming:
+
+    ```json
+    {
+      "provider": "ollama",
+      "model": "qwen3-coder",
+      "stream": false
+    }
+    ```
+
+    Root cause: Ollama returns NDJSON when streaming, but SDK expects single JSON objects.
+
+    Tracking: [Issue #1124](https://github.com/code-yeongyu/oh-my-opencode/issues/1124)
+
+    See [Ollama Troubleshooting](/resources/troubleshooting#ollama).
+  </Accordion>
+
+  <Accordion title="How do I check logs?">
+    Plugin logs:
+
+    ```bash
+    tail -f /tmp/oh-my-opencode.log
+    ```
+
+    OpenCode logs:
+
+    ```bash
+    ls ~/.config/opencode/logs/
+    ```
+
+    Run diagnostics:
+
+    ```bash
+    bunx oh-my-opencode doctor --verbose
+    ```
+  </Accordion>
+
+  <Accordion title="Rate limiting issues?">
+    Solutions:
+
+    1. **Use faster/cheaper models for utility tasks**:
+
+    ```jsonc
+    {
+      "agents": {
+        "explore": { "model": "opencode/gpt-5-nano" }
+      }
+    }
+    ```
+
+    2. **Reduce background agent concurrency**:
+
+    ```jsonc
+    {
+      "background_agent": {
+        "max_concurrent_per_model_or_provider": 3
+      }
+    }
+    ```
+
+    3. **Add more provider accounts** (Gemini supports up to 10 with Antigravity)
+  </Accordion>
+
+  <Accordion title="Where do I report bugs?">
+    [GitHub Issues](https://github.com/code-yeongyu/oh-my-opencode/issues)
+
+    Include:
+    - Output of `bunx oh-my-opencode doctor`
+    - Relevant log excerpts (remove sensitive data)
+    - Steps to reproduce
+    - Your configuration (remove API keys/secrets)
+
+    Join [Discord](https://discord.gg/PUwSMR9XNk) for real-time help.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Contributing
+
+<AccordionGroup>
+  <Accordion title="How can I contribute?">
+    See [Contributing Guide](/resources/contributing) for:
+    - Development setup
+    - Code conventions
+    - PR process
+    - Testing guidelines
+
+    Quick start:
+
+    ```bash
+    git clone https://github.com/code-yeongyu/oh-my-opencode.git
+    cd oh-my-opencode
+    bun install
+    bun run build
+    ```
+  </Accordion>
+
+  <Accordion title="What's the code style?">
+    Key conventions:
+    - **Package Manager**: Bun only (`bun run`, `bun build`)
+    - **File Naming**: kebab-case
+    - **Exports**: Barrel pattern (`index.ts`)
+    - **Factories**: `createXXX()` pattern
+    - **Tests**: Given/When/Then style (not Arrange-Act-Assert)
+
+    Anti-patterns:
+    - No `as any`, `@ts-ignore`, `@ts-expect-error`
+    - No `utils.ts` or `helpers.ts` catch-all files
+    - No AI-generated comment bloat
+    - No empty catch blocks
+  </Accordion>
+
+  <Accordion title="How do I add a new agent?">
+    1. Create `src/agents/my-agent.ts`:
+
+    ```typescript
+    import type { AgentConfig } from "./types";
+
+    export const myAgent: AgentConfig = {
+      name: "my-agent",
+      model: "anthropic/claude-sonnet-4-6",
+      description: "What this agent does",
+      prompt: `System prompt here`,
+      temperature: 0.1,
+    };
+    ```
+
+    2. Add to `src/agents/index.ts`
+    3. Run `bun run build:schema` to update JSON schema
+
+    See [Contributing Guide](/resources/contributing#adding-a-new-agent).
+  </Accordion>
+
+  <Accordion title="Can I add custom categories?">
+    Yes, in your configuration:
+
+    ```jsonc
+    {
+      "categories": {
+        "my-category": {
+          "model": "anthropic/claude-opus-4-6",
+          "description": "Tasks requiring specialized knowledge",
+          "temperature": 0.2
+        }
+      }
+    }
+    ```
+
+    Then reference in agent prompts or delegation logic.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Advanced
+
+<AccordionGroup>
+  <Accordion title="How does model fallback work?">
+    When a model fails or is unavailable, the system tries the next in the agent's fallback chain:
+
+    Example for Sisyphus:
+    ```text
+    Claude Opus 4.6 (max20) → Kimi K2.5 → GLM 5 → Big Pickle (free)
+    ```
+
+    Provider priority:
+    ```text
+    Native (anthropic/, openai/, google/) > Kimi > Copilot > Venice > OpenCode Zen > Z.ai
+    ```
+
+    See [Agent Model Matching](/guide/agent-model-matching) for full details.
+  </Accordion>
+
+  <Accordion title="Can I use OpenCode Zen models?">
+    Yes. OpenCode Zen provides free/community-provided access to:
+    - `opencode/claude-opus-4-6`
+    - `opencode/gpt-5.2`
+    - `opencode/gpt-5-nano`
+    - `opencode/big-pickle` (GLM 4.6)
+    - `opencode/minimax-m2.5-free`
+
+    Configure during installation:
+
+    ```bash
+    bunx oh-my-opencode install --no-tui --claude=no --opencode-zen=yes
+    ```
+
+    Or override models manually:
+
+    ```jsonc
+    {
+      "agents": {
+        "sisyphus": { "model": "opencode/claude-opus-4-6" }
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="What hooks can I disable?">
+    All 46 hooks can be disabled individually:
+
+    ```jsonc
+    {
+      "disabled_hooks": [
+        "wisdom-hook",
+        "session-saver-hook",
+        "todo-continuation-hook",
+        "context-injection-hook"
+      ]
+    }
+    ```
+
+    <Warning>
+    Disabling hooks may reduce agent effectiveness. Only disable if you understand the tradeoffs.
+    </Warning>
+
+    See [Configuration Reference](/reference/configuration#hooks) for hook list.
+  </Accordion>
+
+  <Accordion title="How do I profile performance?">
+    Enable verbose logging:
+
+    ```jsonc
+    {
+      "experimental": {
+        "verbose_logging": true
+      }
+    }
+    ```
+
+    Check logs:
+
+    ```bash
+    tail -f /tmp/oh-my-opencode.log | grep "timing"
+    ```
+
+    Or use `bunx oh-my-opencode doctor --verbose` for diagnostic timing.
+  </Accordion>
+</AccordionGroup>

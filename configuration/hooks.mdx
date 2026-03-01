@@ -1,0 +1,415 @@
+---
+title: Hook Configuration
+description: Customize 46 lifecycle hooks, disabled_hooks array, hook tiers, and hook-specific settings
+---
+
+## What Are Hooks?
+
+Hooks are **lifecycle event handlers** that run at specific points during execution:
+
+- **Before/after tool execution**
+- **On session events** (created, deleted, idle, error)
+- **On message transformations**
+- **On continuation/compaction**
+
+oh-my-opencode provides **46 built-in hooks** across 3 tiers.
+
+## Hook Tiers
+
+Hooks are organized into three tiers:
+
+### Tier 1: Session Hooks (23)
+
+Run during session lifecycle events:
+
+- `context-window-monitor` — Track context usage
+- `session-recovery` — Auto-recover from crashes
+- `session-notification` — OS notifications for session events
+- `think-mode` — Extended thinking mode detection
+- `model-fallback` — Legacy model fallback (use `runtime-fallback` instead)
+- `anthropic-context-window-limit-recovery` — Auto-compact on context limit
+- `preemptive-compaction` — Proactive context compression
+- `background-notification` — Notifications for background tasks
+- `auto-update-checker` — Check for plugin updates
+- `startup-toast` — Show startup notification
+- `keyword-detector` — Detect special keywords
+- `agent-usage-reminder` — Remind about available agents
+- `non-interactive-env` — Detect non-interactive environments
+- `interactive-bash-session` — Manage bash sessions
+- `ralph-loop` — Ralph loop prevention
+- `no-sisyphus-gpt` — Auto-switch Sisyphus from GPT to Hephaestus
+- `no-hephaestus-non-gpt` — Block non-GPT models for Hephaestus
+- `start-work` — Start work command integration
+- `atlas` — Atlas agent integration
+- `unstable-agent-babysitter` — Monitor unstable agents
+- `task-resume-info` — Task resumption information
+- `runtime-fallback` — Auto-switch models on API errors
+- `anthropic-effort` — Anthropic effort level adjustment
+
+### Tier 2: Tool Guard Hooks (10)
+
+Run before/after tool execution:
+
+- `comment-checker` — Detect AI-generated comment patterns
+- `tool-output-truncator` — Truncate long tool outputs
+- `question-label-truncator` — Truncate question labels
+- `directory-agents-injector` — Inject AGENTS.md content (deprecated on OpenCode 1.1.37+)
+- `directory-readme-injector` — Inject README.md content
+- `rules-injector` — Inject project rules
+- `write-existing-file-guard` — Prevent accidental overwrites
+- `edit-error-recovery` — Recover from edit errors
+- `json-error-recovery` — Recover from JSON parse errors
+- `hashline-read-enhancer` — Annotate Read output with hash anchors
+
+### Tier 3: Transform Hooks (4)
+
+Run on message transformations:
+
+- `thinking-block-validator` — Validate thinking blocks
+- `claude-code-hooks` — Claude Code compatibility
+- `compaction-context-injector` — Inject context during compaction
+- `read-image-resizer` — Resize images for multimodal models
+
+## Continuation Hooks (7)
+
+Run during task continuation:
+
+- `todo-continuation-enforcer` — Enforce todo completion
+- `empty-task-response-detector` — Detect empty task responses
+- `delegate-task-retry` — Retry failed task delegations
+- `prometheus-md-only` — Markdown-only mode for Prometheus
+- `sisyphus-junior-notepad` — Notepad for Sisyphus Junior
+- `stop-continuation-guard` — Prevent infinite continuations
+- `tasks-todowrite-disabler` — Disable todowrite for task system
+- `compaction-todo-preserver` — Preserve todos during compaction
+
+## Skill Hooks (2)
+
+Run for skill system:
+
+- `category-skill-reminder` — Remind about category-specific skills
+- `auto-slash-command` — Auto-detect slash commands
+
+## Disabling Hooks
+
+Disable hooks using the `disabled_hooks` array:
+
+```jsonc
+{
+  "disabled_hooks": [
+    "comment-checker",
+    "agent-usage-reminder",
+    "startup-toast"
+  ]
+}
+```
+
+<Warning>
+  **Do not disable `no-sisyphus-gpt`!** Sisyphus is not optimized for GPT models. This hook automatically switches to Hephaestus when a GPT model is selected.
+</Warning>
+
+## Hook-Specific Configuration
+
+Some hooks have dedicated configuration options:
+
+### Comment Checker
+
+Customize the AI-generated comment detection:
+
+<ParamField path="comment_checker.custom_prompt" type="string">
+  Custom prompt for comment quality checking. Use `{{comments}}` placeholder.
+  
+  ```jsonc
+  {
+    "comment_checker": {
+      "custom_prompt": "Check these comments for AI patterns: {{comments}}"
+    }
+  }
+  ```
+</ParamField>
+
+**Disable entirely:**
+```jsonc
+{
+  "disabled_hooks": ["comment-checker"]
+}
+```
+
+### Startup Toast
+
+The startup toast is a sub-feature of `auto-update-checker`. Disable just the toast:
+
+```jsonc
+{
+  "disabled_hooks": ["startup-toast"]
+}
+```
+
+Disable update checking entirely:
+```jsonc
+{
+  "auto_update": false,
+  "disabled_hooks": ["auto-update-checker"]
+}
+```
+
+### Directory Agents Injector
+
+<Note>
+  Auto-disabled on OpenCode 1.1.37+ which has native AGENTS.md support.
+</Note>
+
+Manually disable if needed:
+```jsonc
+{
+  "disabled_hooks": ["directory-agents-injector"]
+}
+```
+
+### Hashline Read Enhancer
+
+When `hashline_edit` is enabled, two companion hooks activate:
+
+- `hashline-read-enhancer` — Annotates Read output with `LINE#ID` anchors
+- `hashline-edit-diff-enhancer` — Shows diffs for hashline edits
+
+**Disable hashline system:**
+```jsonc
+{
+  "hashline_edit": false
+}
+```
+
+**Disable individual hooks:**
+```jsonc
+{
+  "disabled_hooks": [
+    "hashline-read-enhancer"
+  ]
+}
+```
+
+### Tool Output Truncator
+
+Enabled by default. Truncates long tool outputs to manage context.
+
+**Disable:**
+```jsonc
+{
+  "disabled_hooks": ["tool-output-truncator"]
+}
+```
+
+**Truncate ALL tool outputs (not just whitelisted):**
+```jsonc
+{
+  "experimental": {
+    "truncate_all_tool_outputs": true
+  }
+}
+```
+
+### Runtime Fallback
+
+Auto-switches models on API errors. See [Runtime Fallback](/configuration/advanced#runtime-fallback) for full configuration.
+
+**Disable:**
+```jsonc
+{
+  "runtime_fallback": false
+}
+```
+
+Or:
+```jsonc
+{
+  "disabled_hooks": ["runtime-fallback"]
+}
+```
+
+### Ralph Loop
+
+Prevents infinite agent loops.
+
+**Configure:**
+```jsonc
+{
+  "ralph_loop": {
+    "enabled": true,
+    "max_iterations": 10,
+    "detection_window": 5
+  }
+}
+```
+
+**Disable:**
+```jsonc
+{
+  "disabled_hooks": ["ralph-loop"]
+}
+```
+
+## All Available Hooks
+
+Complete list of 46 hooks:
+
+```jsonc
+{
+  "disabled_hooks": [
+    // Session hooks (23)
+    "todo-continuation-enforcer",
+    "context-window-monitor",
+    "session-recovery",
+    "session-notification",
+    "think-mode",
+    "model-fallback",
+    "anthropic-context-window-limit-recovery",
+    "preemptive-compaction",
+    "background-notification",
+    "auto-update-checker",
+    "startup-toast",
+    "keyword-detector",
+    "agent-usage-reminder",
+    "non-interactive-env",
+    "interactive-bash-session",
+    "ralph-loop",
+    "no-sisyphus-gpt",
+    "no-hephaestus-non-gpt",
+    "start-work",
+    "atlas",
+    "unstable-agent-babysitter",
+    "task-resume-info",
+    "runtime-fallback",
+    "anthropic-effort",
+
+    // Tool guard hooks (10)
+    "comment-checker",
+    "tool-output-truncator",
+    "question-label-truncator",
+    "directory-agents-injector",
+    "directory-readme-injector",
+    "rules-injector",
+    "write-existing-file-guard",
+    "edit-error-recovery",
+    "json-error-recovery",
+    "hashline-read-enhancer",
+
+    // Transform hooks (4)
+    "thinking-block-validator",
+    "claude-code-hooks",
+    "compaction-context-injector",
+    "read-image-resizer",
+
+    // Continuation hooks (7)
+    "empty-task-response-detector",
+    "delegate-task-retry",
+    "prometheus-md-only",
+    "sisyphus-junior-notepad",
+    "stop-continuation-guard",
+    "tasks-todowrite-disabler",
+    "compaction-todo-preserver",
+
+    // Skill hooks (2)
+    "category-skill-reminder",
+    "auto-slash-command"
+  ]
+}
+```
+
+## Hook Migration
+
+Legacy hook names are automatically migrated:
+
+| Legacy Name | Current Name |
+|-------------|-------------|
+| `anthropic-auto-compact` | `anthropic-context-window-limit-recovery` |
+| `grep-output-truncator` | (removed, merged into `tool-output-truncator`) |
+
+Migration runs automatically on config load.
+
+## Safe Hook Creation
+
+Hooks are wrapped in try/catch by default to prevent plugin crashes:
+
+```jsonc
+{
+  "experimental": {
+    "safe_hook_creation": true  // Default
+  }
+}
+```
+
+Disable for debugging:
+```jsonc
+{
+  "experimental": {
+    "safe_hook_creation": false
+  }
+}
+```
+
+## Common Configurations
+
+### Minimal Hooks
+
+Disable most hooks for a lightweight experience:
+
+```jsonc
+{
+  "disabled_hooks": [
+    "comment-checker",
+    "agent-usage-reminder",
+    "startup-toast",
+    "auto-update-checker",
+    "background-notification",
+    "session-notification",
+    "directory-readme-injector",
+    "question-label-truncator"
+  ]
+}
+```
+
+### Performance-Optimized
+
+Disable hooks that add overhead:
+
+```jsonc
+{
+  "disabled_hooks": [
+    "comment-checker",
+    "context-window-monitor",
+    "directory-agents-injector",
+    "directory-readme-injector",
+    "rules-injector"
+  ],
+  "experimental": {
+    "aggressive_truncation": true
+  }
+}
+```
+
+### Silent Mode
+
+Disable all notifications:
+
+```jsonc
+{
+  "disabled_hooks": [
+    "startup-toast",
+    "background-notification",
+    "session-notification",
+    "auto-update-checker"
+  ]
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="MCPs" icon="plug" href="/configuration/mcps">
+    Configure built-in MCPs and skill-embedded MCPs
+  </Card>
+  <Card title="Advanced" icon="flask" href="/configuration/advanced">
+    Runtime fallback, hashline edit, and experimental features
+  </Card>
+</CardGroup>

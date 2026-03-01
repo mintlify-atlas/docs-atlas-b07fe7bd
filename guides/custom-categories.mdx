@@ -1,0 +1,692 @@
+---
+title: 'Custom Categories'
+description: 'Creating domain-specific agent configurations with custom categories'
+icon: 'layer-group'
+---
+
+## What are Categories?
+
+A **Category** is an agent configuration preset optimized for specific domains. Instead of delegating everything to a single AI agent, categories let you invoke specialists tailored to the nature of the task.
+
+<Note>
+**Category**: "What kind of work is this?" (determines model, temperature, prompt mindset)  
+**Skill**: "What tools and knowledge are needed?" (injects specialized knowledge, MCP tools, workflows)
+
+Combining these two concepts generates optimal agents through the `task()` tool.
+</Note>
+
+## Built-in Categories
+
+| Category | Default Model | Use Cases |
+|----------|---------------|----------|
+| `visual-engineering` | `google/gemini-3-pro` | Frontend, UI/UX, design, styling, animation |
+| `ultrabrain` | `openai/gpt-5.3-codex` (xhigh) | Deep logical reasoning, complex architecture decisions |
+| `deep` | `openai/gpt-5.3-codex` (medium) | Goal-oriented autonomous problem-solving, thorough research |
+| `artistry` | `google/gemini-3-pro` (max) | Highly creative/artistic tasks, novel ideas |
+| `quick` | `anthropic/claude-haiku-4-5` | Trivial tasks - single file changes, typo fixes |
+| `unspecified-low` | `anthropic/claude-sonnet-4-6` | Tasks that don't fit other categories, low effort |
+| `unspecified-high` | `anthropic/claude-opus-4-6` (max) | Tasks that don't fit other categories, high effort |
+| `writing` | `kimi-for-coding/k2p5` | Documentation, prose, technical writing |
+
+## Why Use Categories?
+
+### Problem: Model Names Create Bias
+
+```typescript
+// OLD: Model name creates distributional bias
+task(agent="gpt-5.2", prompt="...")
+// Model "knows" its limitations, may underperform
+
+task(agent="claude-opus-4-6", prompt="...")
+// Different self-perception affects behavior
+```
+
+### Solution: Semantic Categories
+
+```typescript
+// NEW: Category describes INTENT, not implementation
+task(category="ultrabrain", prompt="...")
+// Agent thinks: "Think strategically"
+
+task(category="visual-engineering", prompt="...")
+// Agent thinks: "Design beautifully"
+
+task(category="quick", prompt="...")
+// Agent thinks: "Just get it done fast"
+```
+
+The category name shapes the agent's approach **regardless of underlying model**.
+
+## Creating Custom Categories
+
+### Basic Example
+
+```json
+{
+  "categories": {
+    "korean-writer": {
+      "model": "google/gemini-3-flash",
+      "temperature": 0.5,
+      "description": "Technical writer for Korean documentation",
+      "prompt_append": "You are a Korean technical writer. Maintain a friendly and clear tone. Use appropriate honorifics and technical terminology."
+    }
+  }
+}
+```
+
+### Usage
+
+```typescript
+task(
+  category="korean-writer",
+  prompt="Write API documentation for the user authentication endpoints"
+)
+```
+
+## Configuration Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `description` | string | Human-readable description. Shown in task prompt. |
+| `model` | string | AI model ID (e.g., `anthropic/claude-opus-4-6`) |
+| `variant` | string | Model variant: `max`, `xhigh`, `high`, `medium`, `low` |
+| `temperature` | number | Creativity level (0.0 ~ 2.0). Lower is more deterministic. |
+| `top_p` | number | Nucleus sampling parameter (0.0 ~ 1.0) |
+| `prompt_append` | string | Content appended to system prompt for this category |
+| `thinking` | object | Extended thinking config: `{ type: "enabled", budgetTokens: 16000 }` |
+| `reasoningEffort` | string | Reasoning effort: `low`, `medium`, `high`, `xhigh` |
+| `textVerbosity` | string | Text verbosity: `low`, `medium`, `high` |
+| `tools` | object | Tool control: `{ "tool_name": false }` to disable |
+| `maxTokens` | number | Maximum response token count |
+| `is_unstable_agent` | boolean | Force background mode with monitoring |
+
+## Real-World Examples
+
+### Example 1: Database Specialist
+
+```json
+{
+  "categories": {
+    "database": {
+      "model": "openai/gpt-5.2",
+      "variant": "high",
+      "temperature": 0.1,
+      "description": "Database operations and query optimization specialist",
+      "prompt_append": "You are a database expert specializing in PostgreSQL. Focus on:
+- Query performance and indexing strategies
+- Transaction safety and ACID compliance
+- Preventing N+1 queries
+- Using EXPLAIN ANALYZE before optimizations
+- Data migration safety (always test rollback)
+
+NEVER make destructive changes without explicit user approval."
+    }
+  }
+}
+```
+
+**Usage:**
+```typescript
+task(
+  category="database",
+  prompt="Optimize the slow user query in UserService. Current query takes 2.5s on 100k records."
+)
+```
+
+### Example 2: Security Auditor
+
+```json
+{
+  "categories": {
+    "security-audit": {
+      "model": "openai/gpt-5.3-codex",
+      "variant": "xhigh",
+      "temperature": 0.0,
+      "description": "Security vulnerability scanner and auditor",
+      "prompt_append": "You are a security auditor. Your job is to find vulnerabilities:
+
+Check for:
+- SQL injection risks
+- XSS vulnerabilities
+- CSRF protection
+- Authentication/authorization bugs
+- Secrets in code
+- Insecure dependencies
+
+Output:
+- Severity (CRITICAL/HIGH/MEDIUM/LOW)
+- Exploitability assessment
+- Remediation steps with code examples
+
+Be thorough. False positives are acceptable; false negatives are not.",
+      "tools": {
+        "write": false,
+        "edit": false
+      }
+    }
+  }
+}
+```
+
+**Usage:**
+```typescript
+task(
+  category="security-audit",
+  prompt="Audit the authentication system in src/auth/ for vulnerabilities"
+)
+```
+
+<Note>
+`tools` config prevents the security auditor from modifying code—read-only analysis only.
+</Note>
+
+### Example 3: Git Operations
+
+```json
+{
+  "categories": {
+    "git": {
+      "model": "opencode/gpt-5-nano",
+      "temperature": 0.0,
+      "description": "All git operations",
+      "prompt_append": "Focus on:
+- Atomic commits (one logical change per commit)
+- Clear, concise commit messages
+- Safe operations (never force push to main/master)
+- Preserving commit history when possible
+
+Follow the project's commit message style detected from git log."
+    }
+  }
+}
+```
+
+**Usage:**
+```typescript
+task(
+  category="git",
+  load_skills=["git-master"],
+  prompt="Create atomic commits for these changes"
+)
+```
+
+### Example 4: Test Writer
+
+```json
+{
+  "categories": {
+    "test-writer": {
+      "model": "anthropic/claude-sonnet-4-6",
+      "temperature": 0.3,
+      "description": "Unit and integration test specialist",
+      "prompt_append": "You are a test-driven development expert.
+
+Test Philosophy:
+- Tests should be readable by non-developers
+- One assertion per test (focused)
+- Test behavior, not implementation
+- Use Given/When/Then structure
+- Mock external dependencies
+
+Coverage targets:
+- Critical paths: 100%
+- Business logic: 90%
+- Utilities: 80%
+- UI components: 70%
+
+Always run tests after writing to verify they pass."
+    }
+  }
+}
+```
+
+**Usage:**
+```typescript
+task(
+  category="test-writer",
+  prompt="Write comprehensive tests for the payment processing service"
+)
+```
+
+### Example 5: Code Reviewer
+
+```json
+{
+  "categories": {
+    "code-review": {
+      "model": "openai/gpt-5.2",
+      "variant": "high",
+      "temperature": 0.2,
+      "description": "Code review and quality assurance",
+      "prompt_append": "You are a senior code reviewer. Review for:
+
+**Architecture:**
+- Separation of concerns
+- SOLID principles
+- Design patterns (appropriate vs over-engineered)
+
+**Code Quality:**
+- Readability and maintainability
+- Performance implications
+- Error handling completeness
+- Edge case coverage
+
+**Best Practices:**
+- Framework/library conventions
+- Security considerations
+- Accessibility (for UI code)
+
+**Output Format:**
+✅ Approved with minor suggestions
+⚠️ Needs changes (list specific issues)
+❌ Requires major revision (explain why)
+
+Be constructive. Praise good patterns. Explain the 'why' behind suggestions.",
+      "tools": {
+        "write": false,
+        "edit": false
+      }
+    }
+  }
+}
+```
+
+**Usage:**
+```typescript
+task(
+  category="code-review",
+  prompt="Review the PR changes in src/services/payment/"
+)
+```
+
+## Advanced: Thinking Models
+
+For categories requiring deep reasoning:
+
+```json
+{
+  "categories": {
+    "deep-reasoning": {
+      "model": "anthropic/claude-opus-4-6",
+      "thinking": {
+        "type": "enabled",
+        "budgetTokens": 32000
+      },
+      "description": "Extended thinking for complex problems",
+      "tools": {
+        "websearch_web_search_exa": false
+      }
+    }
+  }
+}
+```
+
+**When to use extended thinking:**
+- Architecture decisions
+- Complex algorithm design
+- Root cause analysis for obscure bugs
+- Strategic planning
+
+<Warning>
+Extended thinking significantly increases API costs. Use for genuinely complex problems only.
+</Warning>
+
+## Overriding Built-in Categories
+
+You can override defaults:
+
+```json
+{
+  "categories": {
+    "visual-engineering": {
+      "model": "openai/gpt-5.2",
+      "temperature": 0.8,
+      "prompt_append": "Emphasize accessibility (WCAG 2.1 AA) and performance (Core Web Vitals)."
+    },
+    
+    "quick": {
+      "model": "opencode/gpt-5-nano",
+      "temperature": 0.0
+    }
+  }
+}
+```
+
+## Disabling Categories
+
+Remove categories from delegation options:
+
+```json
+{
+  "disabled_categories": ["ultrabrain", "artistry"]
+}
+```
+
+Disabled categories won't appear in the `task()` tool's category list.
+
+## Combining Categories with Skills
+
+**Power combo:** Category (model/temperature/mindset) + Skill (knowledge/tools)
+
+<CardGroup cols={2}>
+<Card title="The Designer" icon="palette">
+```typescript
+task(
+  category="visual-engineering",
+  load_skills=["frontend-ui-ux", "playwright"],
+  prompt="Build responsive dashboard"
+)
+```
+
+**Effect:**
+- Model: Gemini 3 Pro (visual strength)
+- Mindset: Design-focused
+- Knowledge: UI/UX principles
+- Tools: Browser automation for verification
+</Card>
+
+<Card title="The Architect" icon="building">
+```typescript
+task(
+  category="ultrabrain",
+  load_skills=[],
+  prompt="Design microservices architecture"
+)
+```
+
+**Effect:**
+- Model: GPT-5.3 Codex (deep reasoning)
+- Mindset: Strategic thinking
+- Knowledge: Pure reasoning, no domain bias
+</Card>
+
+<Card title="The Maintainer" icon="wrench">
+```typescript
+task(
+  category="quick",
+  load_skills=["git-master"],
+  prompt="Fix linting errors and commit"
+)
+```
+
+**Effect:**
+- Model: Claude Haiku (fast/cheap)
+- Mindset: Get it done quickly
+- Knowledge: Git best practices
+</Card>
+
+<Card title="The QA Engineer" icon="magnifying-glass">
+```typescript
+task(
+  category="test-writer",
+  load_skills=[],
+  prompt="Write integration tests"
+)
+```
+
+**Effect:**
+- Model: Claude Sonnet (balanced)
+- Mindset: TDD philosophy
+- Knowledge: Testing patterns
+</Card>
+</CardGroup>
+
+## Category Delegation Tips
+
+### Clear and Specific Prompts
+
+When delegating, **clarity is everything**. Include these 7 elements:
+
+1. **TASK**: What needs to be done? (single objective)
+2. **EXPECTED OUTCOME**: What is the deliverable?
+3. **REQUIRED SKILLS**: Which skills via `load_skills`?
+4. **REQUIRED TOOLS**: Which tools must be used?
+5. **MUST DO**: What must be done (constraints)
+6. **MUST NOT DO**: What must never be done
+7. **CONTEXT**: File paths, existing patterns, references
+
+**Bad:**
+```typescript
+task(category="deep", prompt="Fix this")
+```
+
+**Good:**
+```typescript
+task(
+  category="deep",
+  prompt=`
+TASK: Fix mobile layout breaking issue in LoginButton component
+
+CONTEXT:
+- File: src/components/LoginButton.tsx
+- Using Tailwind CSS
+- Breakpoint: md (768px)
+
+MUST DO:
+- Change flex-direction at md: breakpoint
+- Preserve desktop layout exactly
+- Test on mobile viewport
+
+MUST NOT DO:
+- Modify existing desktop styles
+- Change button colors/fonts
+- Add new dependencies
+
+EXPECTED:
+- Buttons stack vertically on mobile (<768px)
+- Buttons remain horizontal on desktop (≥768px)
+- All tests pass
+`
+)
+```
+
+### Background Execution
+
+Category-based tasks work great in background:
+
+```typescript
+// Fire multiple category tasks in parallel
+task(category="deep", prompt="...", run_in_background=true)
+task(category="test-writer", prompt="...", run_in_background=true)
+task(category="code-review", prompt="...", run_in_background=true)
+```
+
+See [Background Agents](/guides/background-agents) for details.
+
+## Sisyphus-Junior as Executor
+
+When you use a category, a special agent called **Sisyphus-Junior** executes the work.
+
+**Characteristics:**
+- Cannot re-delegate tasks (prevents infinite loops)
+- Focused on assigned task only
+- Inherits category model/temperature/prompt
+- Has loaded skills available
+
+**Why this design:**
+Prevents delegation chains like: Sisyphus → Junior → Another Junior → ...
+
+Junior is a **leaf node** in the delegation tree.
+
+## Checking Available Categories
+
+The `task()` tool automatically lists available categories in its description:
+
+```typescript
+// Agent sees this in tool description:
+Available categories:
+- visual-engineering: Frontend, UI/UX, design...
+- ultrabrain: Deep logical reasoning...
+- deep: Autonomous problem-solving...
+- korean-writer: Technical writer for Korean docs... // Your custom category
+- ...
+```
+
+## Best Practices
+
+<AccordionGroup>
+<Accordion title="Match model to task complexity">
+
+```json
+// ✅ Good: Fast model for simple tasks
+{
+  "categories": {
+    "quick": { "model": "opencode/gpt-5-nano" }
+  }
+}
+
+// ❌ Bad: Expensive model for simple tasks
+{
+  "categories": {
+    "quick": { "model": "anthropic/claude-opus-4-6" }
+  }
+}
+```
+
+</Accordion>
+
+<Accordion title="Use prompt_append for category-specific guidance">
+
+```json
+// ✅ Good: Clear expectations
+{
+  "categories": {
+    "api-design": {
+      "prompt_append": "Follow REST conventions. Use OpenAPI spec. Include error responses."
+    }
+  }
+}
+
+// ❌ Bad: Generic, no guidance
+{
+  "categories": {
+    "api-design": {}
+  }
+}
+```
+
+</Accordion>
+
+<Accordion title="Disable dangerous tools for read-only categories">
+
+```json
+// ✅ Good: Auditor can't modify code
+{
+  "categories": {
+    "security-audit": {
+      "tools": {
+        "write": false,
+        "edit": false
+      }
+    }
+  }
+}
+```
+
+</Accordion>
+
+<Accordion title="Set appropriate temperature">
+
+| Task Type | Temperature |
+|-----------|-------------|
+| Code generation, database queries | 0.0 - 0.1 |
+| General development | 0.3 - 0.5 |
+| Creative work, UI design | 0.7 - 1.0 |
+| Brainstorming, ideation | 1.0 - 1.5 |
+
+</Accordion>
+</AccordionGroup>
+
+## Common Patterns
+
+### Pattern 1: Specialist Trio
+
+```json
+{
+  "categories": {
+    "backend": {
+      "model": "openai/gpt-5.3-codex",
+      "description": "Backend API development"
+    },
+    "frontend": {
+      "model": "google/gemini-3-pro",
+      "description": "Frontend UI development"
+    },
+    "testing": {
+      "model": "anthropic/claude-sonnet-4-6",
+      "description": "Test creation and QA"
+    }
+  }
+}
+```
+
+**Usage:**
+```typescript
+// Parallel execution
+task(category="backend", prompt="...", run_in_background=true)
+task(category="frontend", prompt="...", run_in_background=true)
+task(category="testing", prompt="...", run_in_background=true)
+```
+
+### Pattern 2: Cost-Tiered
+
+```json
+{
+  "categories": {
+    "premium": {
+      "model": "anthropic/claude-opus-4-6",
+      "variant": "max",
+      "description": "For critical, complex work"
+    },
+    "standard": {
+      "model": "anthropic/claude-sonnet-4-6",
+      "description": "For regular development"
+    },
+    "economy": {
+      "model": "opencode/gpt-5-nano",
+      "description": "For simple, repetitive tasks"
+    }
+  }
+}
+```
+
+### Pattern 3: Language-Specific
+
+```json
+{
+  "categories": {
+    "korean-docs": {
+      "model": "google/gemini-3-flash",
+      "prompt_append": "Write in Korean. Use formal register."
+    },
+    "japanese-docs": {
+      "model": "google/gemini-3-flash",
+      "prompt_append": "Write in Japanese. Use desu/masu form."
+    },
+    "english-docs": {
+      "model": "kimi-for-coding/k2p5",
+      "prompt_append": "Write in English. Technical but accessible."
+    }
+  }
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+<Card title="Agent Model Matching" icon="microchip" href="/guides/agent-model-matching">
+Understand model selection principles
+</Card>
+
+<Card title="Skills" icon="wand-magic-sparkles" href="/guides/skills">
+Combine categories with domain knowledge
+</Card>
+
+<Card title="Background Agents" icon="rotate" href="/guides/background-agents">
+Run category tasks in parallel
+</Card>
+
+<Card title="Configuration" icon="gear" href="/configuration/categories">
+Full configuration reference
+</Card>
+</CardGroup>

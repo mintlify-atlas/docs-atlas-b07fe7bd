@@ -1,122 +1,133 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Oh My OpenCode",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#369eff",
+    "light": "#8ae8ff",
+    "dark": "#0066cc"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/code-yeongyu/oh-my-opencode"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/code-yeongyu/oh-my-opencode",
+      "discord": "https://discord.gg/PUwSMR9XNk",
+      "x": "https://x.com/justsisyphus"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "installation"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/architecture",
+              "concepts/agents",
+              "concepts/orchestration",
+              "concepts/categories"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Guides",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "guides/ultrawork-mode",
+              "guides/prometheus-planning",
+              "guides/background-agents",
+              "guides/agent-model-matching",
+              "guides/custom-categories",
+              "guides/skills",
+              "guides/commands"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Configuration",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "configuration/overview",
+              "configuration/agents",
+              "configuration/categories",
+              "configuration/hooks",
+              "configuration/mcps",
+              "configuration/advanced"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Agents",
             "pages": [
-              "api-reference/introduction"
+              "api/agents/sisyphus",
+              "api/agents/hephaestus",
+              "api/agents/prometheus",
+              "api/agents/atlas",
+              "api/agents/oracle",
+              "api/agents/librarian",
+              "api/agents/explore"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Tools",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/tools/overview",
+              "api/tools/hashline-edit",
+              "api/tools/lsp-tools",
+              "api/tools/ast-grep",
+              "api/tools/background-task",
+              "api/tools/delegate-task"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "api/features/hooks",
+              "api/features/skills",
+              "api/features/mcps",
+              "api/features/tmux",
+              "api/features/comment-checker"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Advanced",
+        "groups": [
+          {
+            "group": "Extending",
+            "pages": [
+              "advanced/custom-skills",
+              "advanced/custom-hooks",
+              "advanced/custom-agents",
+              "advanced/plugin-development"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "resources/manifesto",
+              "resources/troubleshooting",
+              "resources/faq",
+              "resources/contributing"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

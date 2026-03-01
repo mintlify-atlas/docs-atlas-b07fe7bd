@@ -1,0 +1,444 @@
+---
+title: ast-grep Tools
+description: AST-aware code search and rewriting with pattern matching across 25 languages
+---
+
+## Overview
+
+AST-grep tools provide structural code search and transformation using abstract syntax tree (AST) pattern matching. Unlike regex-based search, AST-grep understands code structure and ignores formatting differences.
+
+**Source**: `src/tools/ast-grep/`
+
+## Features
+
+- **25 supported languages** (see full list below)
+- **Meta-variables** for pattern capture (`$VAR`, `$$$`)
+- **Rewriting capabilities** with pattern templates
+- **Context-aware matching** (ignores whitespace/formatting)
+- **Fast execution** with result limits and timeouts
+
+## Tools
+
+### ast_grep_search
+
+Search code patterns using AST-aware matching.
+
+<ParamField path="pattern" type="string" required>
+  AST pattern with meta-variables
+  
+  **Meta-variables**:
+  - `$VAR`: Single AST node (identifier, expression, etc.)
+  - `$$$`: Multiple nodes (zero or more)
+  
+  **Critical**: Pattern must be **complete AST node** (valid code).
+  
+  Examples:
+  - ✅ `"export async function $NAME($$$) { $$$ }"`
+  - ❌ `"export async function $NAME"` (incomplete)
+</ParamField>
+
+<ParamField path="lang" type="enum" required>
+  Target language (25 options)
+  
+  See [Supported Languages](#supported-languages) for full list.
+</ParamField>
+
+<ParamField path="paths" type="string[]">
+  Paths to search (default: `["."]`)
+  
+  Example: `["/workspace/src", "/workspace/tests"]`
+</ParamField>
+
+<ParamField path="globs" type="string[]">
+  Include/exclude glob patterns
+  
+  Prefix `!` to exclude:
+  - `["*.ts"]`: Only `.ts` files
+  - `["!*.test.ts"]`: Exclude test files
+  - `["*.tsx", "!**/node_modules/**"]`: `.tsx` files, skip `node_modules`
+</ParamField>
+
+<ParamField path="context" type="number">
+  Context lines around match (default: 0)
+  
+  Example: `context: 3` shows 3 lines before/after match
+</ParamField>
+
+<ResponseField name="output" type="string">
+  Match results with file, line, and matched code
+  
+  Example:
+  ```
+  /workspace/src/utils.ts:15:0
+  export async function processData(input: string) {
+    return transform(input)
+  }
+  
+  /workspace/src/api.ts:42:2
+  export async function fetchUser(id: number) {
+    return db.users.findById(id)
+  }
+  
+  Found 2 matches
+  ```
+  
+  If more than 500 matches (configurable):
+  ```
+  Found 750 matches (truncated at 500)
+  ```
+</ResponseField>
+
+**Examples**:
+
+```typescript
+// Find all async functions
+ast_grep_search({
+  pattern: "async function $NAME($$$) { $$$ }",
+  lang: "typescript"
+})
+
+// Find console.log calls
+ast_grep_search({
+  pattern: "console.log($MSG)",
+  lang: "javascript",
+  globs: ["*.js", "!**/node_modules/**"]
+})
+
+// Find React components with specific prop
+ast_grep_search({
+  pattern: "<Component onClick={$HANDLER} />",
+  lang: "tsx",
+  paths: ["/workspace/src/components"],
+  context: 2
+})
+
+// Find Python class definitions
+ast_grep_search({
+  pattern: "class $NAME:",
+  lang: "python"
+})
+```
+
+**Source**: `tools.ts:39`
+
+---
+
+### ast_grep_replace
+
+Replace code patterns with AST-aware rewriting.
+
+<ParamField path="pattern" type="string" required>
+  AST pattern to match (same as search)
+</ParamField>
+
+<ParamField path="rewrite" type="string" required>
+  Replacement pattern (can use `$VAR` from pattern)
+  
+  Meta-variables from `pattern` are available in `rewrite`.
+</ParamField>
+
+<ParamField path="lang" type="enum" required>
+  Target language
+</ParamField>
+
+<ParamField path="paths" type="string[]">
+  Paths to search (default: `["."]`)
+</ParamField>
+
+<ParamField path="globs" type="string[]">
+  Include/exclude glob patterns
+</ParamField>
+
+<ParamField path="dryRun" type="boolean">
+  Preview changes without applying (default: `true`)
+  
+  **Critical**: Set `dryRun: false` to apply changes.
+</ParamField>
+
+<ResponseField name="output" type="string">
+  Rewrite results with diff
+  
+  Dry-run output:
+  ```
+  DRY RUN - Changes NOT applied
+  
+  /workspace/src/utils.ts:
+  - console.log(message)
+  + logger.info(message)
+  
+  Would update 1 file(s)
+  ```
+  
+  Applied output:
+  ```
+  Applied changes:
+  
+  /workspace/src/utils.ts:
+  - console.log(message)
+  + logger.info(message)
+  
+  Updated 1 file(s)
+  ```
+</ResponseField>
+
+**Examples**:
+
+```typescript
+// Replace console.log with logger (dry-run)
+ast_grep_replace({
+  pattern: "console.log($MSG)",
+  rewrite: "logger.info($MSG)",
+  lang: "typescript"
+})
+// Review output, then apply:
+ast_grep_replace({
+  pattern: "console.log($MSG)",
+  rewrite: "logger.info($MSG)",
+  lang: "typescript",
+  dryRun: false
+})
+
+// Rename function calls
+ast_grep_replace({
+  pattern: "processData($ARG)",
+  rewrite: "handleData($ARG)",
+  lang: "javascript",
+  globs: ["src/**/*.js"]
+})
+
+// Update React prop
+ast_grep_replace({
+  pattern: "<Button variant=\"primary\" />",
+  rewrite: "<Button variant=\"default\" />",
+  lang: "tsx",
+  dryRun: false
+})
+
+// Python: Update import
+ast_grep_replace({
+  pattern: "from utils import $NAME",
+  rewrite: "from lib.utils import $NAME",
+  lang: "python"
+})
+```
+
+**Source**: `tools.ts:82`
+
+## Supported Languages
+
+25 languages with full AST support:
+
+| Language | Extensions | Example Pattern |
+|----------|-----------|----------------|
+| `bash` | `.bash`, `.sh`, `.zsh` | `"if [[ $CONDITION ]]; then"` |
+| `c` | `.c`, `.h` | `"int $NAME($$$) { $$$ }"` |
+| `cpp` | `.cpp`, `.hpp` | `"class $NAME { $$$ }"` |
+| `csharp` | `.cs` | `"public class $NAME { $$$ }"` |
+| `css` | `.css` | `".$CLASS { $$$ }"` |
+| `elixir` | `.ex`, `.exs` | `"def $NAME($$$) do $$$ end"` |
+| `go` | `.go` | `"func $NAME($$$) { $$$ }"` |
+| `haskell` | `.hs` | `"$NAME :: $$$"` |
+| `html` | `.html`, `.htm` | `"<div class=\"$CLASS\">$$$</div>"` |
+| `java` | `.java` | `"public class $NAME { $$$ }"` |
+| `javascript` | `.js`, `.jsx`, `.mjs`, `.cjs` | `"function $NAME($$$) { $$$ }"` |
+| `json` | `.json` | `"{ \"$KEY\": $$$ }"` |
+| `kotlin` | `.kt`, `.kts` | `"fun $NAME($$$) { $$$ }"` |
+| `lua` | `.lua` | `"function $NAME($$$) $$$ end"` |
+| `nix` | `.nix` | `"{ $$$, $NAME, $$$ }:"` |
+| `php` | `.php` | `"function $NAME($$$) { $$$ }"` |
+| `python` | `.py`, `.pyi` | `"def $NAME($$$):"` |
+| `ruby` | `.rb`, `.rake` | `"def $NAME($$$) $$$ end"` |
+| `rust` | `.rs` | `"fn $NAME($$$) -> $$$ { $$$ }"` |
+| `scala` | `.scala`, `.sc` | `"def $NAME($$$): $$$ = { $$$ }"` |
+| `solidity` | `.sol` | `"function $NAME($$$) public { $$$ }"` |
+| `swift` | `.swift` | `"func $NAME($$$) -> $$$ { $$$ }"` |
+| `typescript` | `.ts`, `.cts`, `.mts` | `"function $NAME($$$): $$$ { $$$ }"` |
+| `tsx` | `.tsx` | `"export const $NAME: React.FC = () => { $$$ }"` |
+| `yaml` | `.yml`, `.yaml` | `"$KEY: $$$"` |
+
+**Source**: `language-support.ts:2`
+
+## Pattern Syntax
+
+### Meta-Variables
+
+- **`$VAR`**: Matches single AST node (identifier, expression, statement)
+- **`$$$`**: Matches multiple nodes (zero or more arguments, statements, etc.)
+
+### Naming Convention
+
+- Uppercase recommended: `$NAME`, `$HANDLER`, `$ARG`
+- Descriptive names improve readability
+
+### Complete AST Nodes
+
+Patterns must be valid code that forms a complete AST node.
+
+**✅ Valid**:
+```typescript
+"function $NAME($$$) { $$$ }"  // Complete function declaration
+"console.log($MSG)"           // Complete call expression
+"class $NAME { $$$ }"          // Complete class declaration
+```
+
+**❌ Invalid**:
+```typescript
+"function $NAME"               // Incomplete (no params/body)
+"export async function $NAME"  // Incomplete (no params/body)
+"if ($COND)"                   // Incomplete (no body)
+```
+
+### Language-Specific Notes
+
+**Python**: Remove trailing colons from patterns
+
+```python
+# ❌ Wrong
+pattern: "class $NAME:"
+
+# ✅ Correct
+pattern: "class $NAME"
+```
+
+**JavaScript/TypeScript**: Include full function structure
+
+```typescript
+// ❌ Wrong
+pattern: "async function $NAME"
+
+// ✅ Correct
+pattern: "async function $NAME($$$) { $$$ }"
+```
+
+## Error Handling
+
+### Empty Results with Hint
+
+For Python trailing colon:
+```
+No matches found.
+
+Hint: Remove trailing colon. Try: "class $NAME"
+```
+
+For incomplete function:
+```
+No matches found.
+
+Hint: Function patterns need params and body. Try "function $NAME($$$) { $$$ }"
+```
+
+### Pattern Parse Error
+
+```
+Error: Invalid pattern: syntax error at line 1
+```
+
+**Fix**: Ensure pattern is valid code for target language.
+
+### Timeout
+
+```
+Search timed out after 300000ms (truncated at 500 matches)
+```
+
+**Fix**: Narrow search with `paths` or `globs`.
+
+## Configuration
+
+**Constants** (`constants.ts:33`):
+
+```typescript
+DEFAULT_TIMEOUT_MS = 300_000        // 5 minutes
+DEFAULT_MAX_OUTPUT_BYTES = 1_048_576  // 1 MB
+DEFAULT_MAX_MATCHES = 500
+```
+
+## Use Cases
+
+### Refactoring
+
+```typescript
+// Find all usages before refactoring
+ast_grep_search({
+  pattern: "processData($ARG)",
+  lang: "typescript"
+})
+
+// Apply refactor
+ast_grep_replace({
+  pattern: "processData($ARG)",
+  rewrite: "handleData($ARG)",
+  lang: "typescript",
+  dryRun: false
+})
+```
+
+### API Migration
+
+```typescript
+// Find old API calls
+ast_grep_search({
+  pattern: "api.v1.$METHOD($$$)",
+  lang: "typescript"
+})
+
+// Migrate to v2
+ast_grep_replace({
+  pattern: "api.v1.$METHOD($$$)",
+  rewrite: "api.v2.$METHOD($$$)",
+  lang: "typescript",
+  dryRun: false
+})
+```
+
+### Code Audit
+
+```typescript
+// Find all TODO comments (if AST supports)
+ast_grep_search({
+  pattern: "// TODO: $MSG",
+  lang: "javascript"
+})
+
+// Find deprecated function usage
+ast_grep_search({
+  pattern: "legacyFunction($$$)",
+  lang: "typescript",
+  globs: ["src/**/*.ts"]
+})
+```
+
+## Best Practices
+
+### ✅ Do
+
+- **Use complete AST nodes** in patterns
+- **Test patterns with search** before applying replace
+- **Use dry-run** (default) to preview changes
+- **Narrow scope** with `paths` and `globs` for large codebases
+- **Use descriptive meta-variable names** (`$HANDLER` not `$X`)
+
+### ❌ Don't
+
+- **Don't use incomplete patterns** — include full syntax
+- **Don't skip dry-run** for destructive changes
+- **Don't use AST-grep for simple text search** — use `grep` instead
+- **Don't forget language-specific quirks** (Python colons, etc.)
+
+## Related Tools
+
+- **grep**: Regex-based search (simpler, faster for text patterns)
+- **lsp_find_references**: Symbol-based search (more precise for refactoring)
+- **hashline_edit**: Safe editing (alternative to `ast_grep_replace`)
+
+## Source Files
+
+| File | Purpose |
+|------|----------|
+| `tools.ts:38` | Tool factories and execution |
+| `cli.ts` | CLI invocation and process management |
+| `language-support.ts:2` | Language list and extensions |
+| `result-formatter.ts` | Format search/replace output |
+| `types.ts` | TypeScript types for matches/results |
+| `constants.ts:33` | Timeout/limit configuration |

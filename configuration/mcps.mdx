@@ -1,0 +1,412 @@
+---
+title: MCP Configuration
+description: Built-in MCPs, Claude Code MCP loading, skill-embedded MCPs, and three-tier MCP system
+---
+
+## Three-Tier MCP System
+
+oh-my-opencode supports MCPs from three sources:
+
+| Tier | Source | Mechanism | Priority |
+|------|--------|-----------|----------|
+| **1. Built-in** | `src/mcp/` | 3 remote HTTP MCPs | Highest |
+| **2. Claude Code** | `.mcp.json` | `${VAR}` env expansion | Medium |
+| **3. Skill-embedded** | `SKILL.md` YAML | Managed by SkillMcpManager | Lowest |
+
+All three tiers can coexist in a single session.
+
+## Built-in MCPs
+
+oh-my-opencode provides **3 built-in remote MCPs**:
+
+### Websearch
+
+<ParamField path="websearch" type="object">
+  Web search via Exa AI (default) or Tavily.
+  
+  **Default provider: Exa AI**
+  ```jsonc
+  {
+    "websearch": {
+      "provider": "exa"
+    }
+  }
+  ```
+  
+  **Switch to Tavily:**
+  ```jsonc
+  {
+    "websearch": {
+      "provider": "tavily"
+    }
+  }
+  ```
+  
+  **Environment variables:**
+  - `EXA_API_KEY` (optional for Exa)
+  - `TAVILY_API_KEY` (required for Tavily)
+  
+  **MCP URL:**
+  - Exa: `https://mcp.exa.ai`
+  - Tavily: `https://mcp.tavily.com`
+</ParamField>
+
+### Context7
+
+<ParamField path="context7" type="object">
+  Library documentation search.
+  
+  ```jsonc
+  {
+    // Enabled by default, no config needed
+  }
+  ```
+  
+  **Environment variables:**
+  - `CONTEXT7_API_KEY` (optional)
+  
+  **MCP URL:**
+  - `https://mcp.context7.com/mcp`
+</ParamField>
+
+### Grep App
+
+<ParamField path="grep_app" type="object">
+  GitHub code search via grep.app.
+  
+  ```jsonc
+  {
+    // Enabled by default, no config needed
+  }
+  ```
+  
+  **Environment variables:**
+  - None required
+  
+  **MCP URL:**
+  - `https://mcp.grep.app`
+</ParamField>
+
+## Disabling Built-in MCPs
+
+Two methods to disable built-in MCPs:
+
+### Method 1: Global Array
+
+```jsonc
+{
+  "disabled_mcps": ["websearch", "context7", "grep_app"]
+}
+```
+
+### Method 2: Per-MCP Config
+
+```jsonc
+{
+  "websearch": { "enabled": false },
+  "context7": { "enabled": false }
+}
+```
+
+## Claude Code MCP Loading
+
+**Tier 2** loads MCPs from `.mcp.json` files using the claude-code-mcp-loader.
+
+### Supported Locations
+
+| Scope | Path |
+|-------|------|
+| Home (legacy) | `~/.claude.json` |
+| User | `~/.config/opencode/.mcp.json` |
+| Project (1) | `.mcp.json` |
+| Project (2) | `.claude/.mcp.json` |
+
+### Environment Variable Expansion
+
+Supports `${VAR}` syntax for environment variables:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${HOME}/workspace"],
+      "env": {
+        "API_KEY": "${MY_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+### Example Configuration
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/Documents"]
+    },
+    "postgres": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "mcp/postgres"],
+      "env": {
+        "POSTGRES_CONNECTION_STRING": "${POSTGRES_URL}"
+      }
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+### Enabling/Disabling
+
+<ParamField path="claude_code.mcp" type="boolean" default={true}>
+  Enable/disable Claude Code MCP loading.
+  
+  **Disable all `.mcp.json` files:**
+  ```jsonc
+  {
+    "claude_code": {
+      "mcp": false
+    }
+  }
+  ```
+  
+  **Keep built-in MCPs, disable `.mcp.json`:**
+  ```jsonc
+  {
+    "claude_code": {
+      "mcp": false
+    }
+    // Built-in MCPs (websearch, context7, grep_app) still active
+  }
+  ```
+</ParamField>
+
+## Skill-Embedded MCPs
+
+**Tier 3** loads MCPs embedded in skill YAML frontmatter.
+
+### MCP Definition in Skills
+
+Skills can bundle MCPs using YAML frontmatter:
+
+```yaml
+---
+name: my-skill
+description: Custom skill with MCP
+mcp:
+  type: stdio
+  command: npx
+  args:
+    - -y
+    - @my-org/my-mcp-server
+  env:
+    API_KEY: ${MY_API_KEY}
+---
+
+# Skill content here...
+```
+
+### Supported MCP Types
+
+<Tabs>
+  <Tab title="stdio">
+    **Stdio MCP** (command-based):
+    
+    ```yaml
+    mcp:
+      type: stdio
+      command: npx
+      args:
+        - -y
+        - @modelcontextprotocol/server-filesystem
+        - /path/to/dir
+      env:
+        DEBUG: "true"
+    ```
+  </Tab>
+  
+  <Tab title="http">
+    **HTTP MCP** (remote):
+    
+    ```yaml
+    mcp:
+      type: remote
+      url: https://api.example.com/mcp
+      headers:
+        Authorization: Bearer ${API_TOKEN}
+      oauth: false
+    ```
+  </Tab>
+</Tabs>
+
+### Built-in Skills with MCPs
+
+Some built-in skills include MCPs:
+
+| Skill | MCP Type | MCP Server |
+|-------|----------|------------|
+| `playwright` | stdio | `@playwright/mcp` |
+
+**Disable skill-embedded MCP:**
+```jsonc
+{
+  "disabled_skills": ["playwright"]  // Disables skill + its MCP
+}
+```
+
+## MCP OAuth Support
+
+oh-my-opencode supports **OAuth 2.0 + PKCE + Dynamic Client Registration (RFC 7591)** for MCP servers.
+
+Manage OAuth flows:
+```bash
+bunx oh-my-opencode mcp-oauth
+```
+
+Commands:
+- `list` — Show all OAuth tokens
+- `revoke <server>` — Revoke token for server
+- `clear` — Clear all tokens
+
+## Listing Active MCPs
+
+Check which MCPs are active:
+
+```bash
+bunx oh-my-opencode doctor --verbose
+```
+
+Output:
+```
+MCPs       websearch · context7 · grep_app
+User MCPs  filesystem · github · postgres
+```
+
+## Complete Example
+
+A comprehensive MCP configuration:
+
+```jsonc
+{
+  // Disable built-in websearch, keep others
+  "disabled_mcps": ["websearch"],
+
+  // Configure context7 (still enabled)
+  "context7": {
+    // Uses default settings
+  },
+
+  // Enable Claude Code MCP loading
+  "claude_code": {
+    "mcp": true
+  },
+
+  // Skills with embedded MCPs
+  "skills": {
+    "sources": [
+      { "path": "./my-skills", "recursive": true }
+    ],
+    "enable": ["playwright"]  // Includes @playwright/mcp
+  },
+
+  "disabled_skills": ["agent-browser"]  // Disable this skill + its MCP
+}
+```
+
+**Corresponding `.mcp.json`:**
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${HOME}/workspace"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+## Debugging MCPs
+
+### Check MCP Status
+
+```bash
+bunx oh-my-opencode doctor
+```
+
+### View MCP Logs
+
+Logs are written to:
+```bash
+/tmp/oh-my-opencode.log
+```
+
+Tail the log:
+```bash
+tail -f /tmp/oh-my-opencode.log | grep MCP
+```
+
+### Common Issues
+
+<AccordionGroup>
+  <Accordion title="MCP server not starting">
+    **Check:**
+    1. Command path is correct (`which npx`, `which docker`)
+    2. Environment variables are set
+    3. Permissions for stdio commands
+    
+    **Debug:**
+    ```bash
+    # Test command directly
+    npx -y @modelcontextprotocol/server-filesystem /path
+    ```
+  </Accordion>
+  
+  <Accordion title="Environment variables not expanding">
+    **Issue:** `${VAR}` not replaced
+    
+    **Solution:**
+    1. Verify variable is exported: `echo $MY_VAR`
+    2. Check `.mcp.json` syntax (no spaces: `${VAR}`, not `${ VAR }`)
+    3. Restart OpenCode after setting env vars
+  </Accordion>
+  
+  <Accordion title="Skill MCP not loading">
+    **Check:**
+    1. Skill is enabled (not in `disabled_skills`)
+    2. YAML frontmatter is valid
+    3. Skill source path is correct
+    
+    **Debug:**
+    ```bash
+    bunx oh-my-opencode doctor --verbose
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Skills" icon="wand-magic-sparkles" href="/features/skills">
+    Learn about skill system and skill-embedded MCPs
+  </Card>
+  <Card title="Hooks" icon="webhook" href="/configuration/hooks">
+    Customize lifecycle hooks
+  </Card>
+</CardGroup>

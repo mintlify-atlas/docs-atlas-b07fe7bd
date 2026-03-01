@@ -1,0 +1,577 @@
+---
+title: "Librarian Agent"
+description: "Multi-repo documentation search specialist for external libraries and OSS implementation examples"
+---
+
+## Overview
+
+The Librarian is a specialized codebase understanding agent for multi-repository analysis, searching remote codebases, retrieving official documentation, and finding implementation examples. Named after the keeper of knowledge, Librarian searches external sources with evidence-based answers backed by GitHub permalinks.
+
+**Mission**: Answer questions about open-source libraries by finding **EVIDENCE** with **GitHub permalinks**.
+
+<ParamField path="model" type="string" default="gemini-3-flash">
+  Fast, cost-effective model optimized for search tasks
+</ParamField>
+
+<ParamField path="mode" type="string" default="subagent">
+  Background search agent, always run in parallel
+</ParamField>
+
+<ParamField path="temperature" type="number" default="0.1">
+  Low temperature for factual, evidence-based answers
+</ParamField>
+
+## Model Configuration
+
+### Default Model (Gemini)
+
+```json
+{
+  "model": "gemini-3-flash",
+  "temperature": 0.1
+}
+```
+
+### Alternative Models
+
+Librarian adapts to available providers:
+
+```json
+// Free tier option
+{
+  "model": "minimax-m2.5-free"
+}
+
+// Quality option
+{
+  "model": "big-pickle"
+}
+```
+
+## Fallback Chain
+
+Librarian prioritizes free, fast models:
+
+<ResponseField name="Primary" type="string">
+  `google/gemini-3-flash`
+</ResponseField>
+
+<ResponseField name="Fallback 1" type="string">
+  `opencode/minimax-m2.5-free`
+</ResponseField>
+
+<ResponseField name="Fallback 2" type="string">
+  `opencode/big-pickle`
+</ResponseField>
+
+<Note>
+  Librarian is optimized for parallel execution. Use free models to keep costs low when firing 3-5 librarians simultaneously.
+</Note>
+
+## Tool Permissions
+
+### Allowed Tools (Read-Only + Search)
+
+- `read` - Read files from cloned repositories
+- `grep` - Search file contents
+- `glob` - Find files by pattern
+- `bash` - Run git/gh commands for repo operations
+- `webfetch` - Fetch documentation pages
+- `websearch` - Web search via Exa/Tavily
+- `context7` - Official documentation lookup
+- `grep_app` - Ultra-fast GitHub code search
+
+### Blocked Tools
+
+<ParamField path="write" type="string" default="deny">
+  Cannot create files - reports findings as text
+</ParamField>
+
+<ParamField path="edit" type="string" default="deny">
+  Cannot modify files
+</ParamField>
+
+<ParamField path="task" type="string" default="deny">
+  Cannot delegate to other agents
+</ParamField>
+
+<ParamField path="call_omo_agent" type="string" default="deny">
+  Cannot spawn other agents
+</ParamField>
+
+## When to Use Librarian
+
+### Recommended Scenarios
+
+<Check>**Unfamiliar packages/libraries** - "How do I use Prisma migrations?"</Check>
+<Check>**External dependency behavior** - "Why does React Query refetch on window focus?"</Check>
+<Check>**OSS implementation examples** - "Find examples of Stripe webhook handlers"</Check>
+<Check>**Library best practices** - "What's the recommended way to handle errors in tRPC?"</Check>
+<Check>**Documentation lookup** - "How to configure Next.js middleware?"</Check>
+
+### Avoid Librarian For
+
+<Warning>**Internal codebase questions** - Use Explore agent instead</Warning>
+<Warning>**Implementation tasks** - Librarian only researches, doesn't implement</Warning>
+<Warning>**File operations** - Librarian is read-only</Warning>
+
+## Request Classification
+
+Librarian classifies EVERY request before taking action:
+
+### Type A: CONCEPTUAL
+
+**Trigger**: "How do I...", "What is...", "Best practice for..."
+
+**Process**: Documentation Discovery → context7 + websearch + targeted webfetch
+
+```typescript
+// Example: "How do I use React Query with TypeScript?"
+
+// Phase 0.5: Documentation Discovery
+websearch("React Query official documentation site")
+// → https://tanstack.com/query/latest/docs
+
+webfetch("https://tanstack.com/query/latest/docs/sitemap.xml")
+// → Parse sitemap, find relevant sections
+
+webfetch("https://tanstack.com/query/latest/docs/typescript")
+context7_resolve-library-id("@tanstack/react-query")
+context7_query-docs(libraryId, "TypeScript setup")
+
+grep_app_searchGitHub(query: "useQuery<", language: ["TypeScript"])
+```
+
+### Type B: IMPLEMENTATION
+
+**Trigger**: "How does X implement...", "Show me the source..."
+
+**Process**: Clone repo → grep/read → construct permalinks
+
+```typescript
+// Example: "How does Next.js implement middleware?"
+
+// Sequential execution
+gh repo clone vercel/next.js ${TMPDIR}/next.js -- --depth 1
+cd ${TMPDIR}/next.js && git rev-parse HEAD
+// → SHA: abc123...
+
+grep -r "middleware" packages/next/src/
+// → Found: packages/next/src/server/web/adapter.ts
+
+read packages/next/src/server/web/adapter.ts
+// → Analyze implementation
+
+// Construct permalink
+https://github.com/vercel/next.js/blob/abc123.../packages/next/src/server/web/adapter.ts#L45-L89
+```
+
+### Type C: CONTEXT & HISTORY
+
+**Trigger**: "Why was this changed?", "History of...", "Related issues?"
+
+**Process**: Parallel search of issues/PRs + git history
+
+```typescript
+// Parallel execution (4+ calls)
+gh search issues "middleware" --repo vercel/next.js --state all --limit 10
+gh search prs "middleware" --repo vercel/next.js --state merged --limit 10
+gh repo clone vercel/next.js ${TMPDIR}/next.js -- --depth 50
+  → git log --oneline -n 20 -- packages/next/src/server/web/
+gh api repos/vercel/next.js/releases --jq '.[0:5]'
+```
+
+### Type D: COMPREHENSIVE
+
+**Trigger**: Complex questions, deep dives
+
+**Process**: Full Documentation Discovery + parallel code/doc/context search
+
+```typescript
+// Parallel execution (6+ calls)
+context7_resolve-library-id → context7_query-docs
+webfetch(targeted_doc_pages_from_sitemap)
+grep_app_searchGitHub(query: "pattern1", language: [...])
+grep_app_searchGitHub(query: "pattern2", useRegexp: true)
+gh repo clone owner/repo ${TMPDIR}/repo -- --depth 1
+gh search issues "topic" --repo owner/repo
+```
+
+## Documentation Discovery (Phase 0.5)
+
+For TYPE A & TYPE D requests, Librarian executes documentation discovery FIRST:
+
+### Step 1: Find Official Docs
+
+```bash
+websearch("library-name official documentation site")
+# Identify official URL (not blogs/tutorials)
+```
+
+### Step 2: Version Check
+
+If version specified (e.g., "React 18", "Next.js 14"):
+
+```bash
+websearch("library-name v{version} documentation")
+webfetch(official_docs_url + "/versions")
+webfetch(official_docs_url + "/v{version}")
+```
+
+### Step 3: Sitemap Discovery
+
+```bash
+webfetch(official_docs_base_url + "/sitemap.xml")
+# Fallback options:
+webfetch(official_docs_base_url + "/sitemap-0.xml")
+webfetch(official_docs_base_url + "/docs/sitemap.xml")
+```
+
+This prevents random searching—you now know WHERE to look.
+
+### Step 4: Targeted Investigation
+
+```bash
+# With sitemap knowledge, fetch SPECIFIC pages
+webfetch(specific_doc_page_from_sitemap)
+context7_query-docs(libraryId, "specific topic")
+```
+
+**Skip Documentation Discovery when**:
+- TYPE B (implementation) - cloning repos anyway
+- TYPE C (context/history) - looking at issues/PRs
+- Library has no official docs
+
+## Evidence Synthesis
+
+### Mandatory Citation Format
+
+Every claim MUST include a permalink:
+
+```markdown
+**Claim**: React Query automatically refetches on window focus by default.
+
+**Evidence** ([source](https://github.com/TanStack/query/blob/abc123/packages/react-query/src/useQuery.ts#L42-L50)):
+```typescript
+function useQuery(options) {
+  const refetchOnWindowFocus = options.refetchOnWindowFocus ?? true
+  // ...
+}
+```
+
+**Explanation**: The `refetchOnWindowFocus` option defaults to `true` when not 
+explicitly set, causing automatic refetches when the browser tab regains focus.
+```
+
+### Permalink Construction
+
+```text
+https://github.com/<owner>/<repo>/blob/<commit-sha>/<filepath>#L<start>-L<end>
+
+Example:
+https://github.com/tanstack/query/blob/abc123def/packages/react-query/src/useQuery.ts#L42-L50
+```
+
+**Getting SHA**:
+```bash
+# From clone
+git rev-parse HEAD
+
+# From API  
+gh api repos/owner/repo/commits/HEAD --jq '.sha'
+
+# From tag
+gh api repos/owner/repo/git/refs/tags/v1.0.0 --jq '.object.sha'
+```
+
+## Parallel Execution Requirements
+
+Librarian is designed for aggressive parallelization:
+
+| Request Type | Minimum Parallel Calls | Doc Discovery |
+|--------------|------------------------|---------------|
+| TYPE A (Conceptual) | 1-2 | **YES** (Phase 0.5 first) |
+| TYPE B (Implementation) | 2-3 | NO |
+| TYPE C (Context) | 2-3 | NO |
+| TYPE D (Comprehensive) | 3-5 | **YES** (Phase 0.5 first) |
+
+**Always vary queries** when using grep_app:
+
+```typescript
+// GOOD: Different angles
+grep_app_searchGitHub(query: "useQuery(", language: ["TypeScript"])
+grep_app_searchGitHub(query: "queryOptions", language: ["TypeScript"])
+grep_app_searchGitHub(query: "staleTime:", language: ["TypeScript"])
+
+// BAD: Same pattern repeated
+grep_app_searchGitHub(query: "useQuery")
+grep_app_searchGitHub(query: "useQuery")
+```
+
+## Usage Examples
+
+### Example 1: Library Usage Question (TYPE A)
+
+```typescript
+// Delegated from main agent
+task(
+  subagent_type="librarian",
+  run_in_background=true,
+  load_skills=[],
+  description="Find Prisma migration best practices",
+  prompt="[CONTEXT]: I'm setting up database migrations for a new project 
+          using Prisma ORM. I need to understand the recommended workflow 
+          for development vs production.
+          
+          [GOAL]: Understand migration workflow to set up CI/CD pipeline correctly.
+          
+          [DOWNSTREAM]: Will configure migration commands in package.json and 
+          GitHub Actions workflow.
+          
+          [REQUEST]: Find official Prisma documentation on migrations. 
+          Specifically:
+          - Development workflow (prisma migrate dev)
+          - Production deployment (prisma migrate deploy)  
+          - Rollback strategies
+          - Common pitfalls
+          
+          Skip tutorial blogs - need official docs and battle-tested patterns."
+)
+
+// Librarian execution:
+// Phase 0.5: Documentation Discovery
+websearch("Prisma official documentation 2026")
+// → https://www.prisma.io/docs
+
+webfetch("https://www.prisma.io/docs/sitemap.xml")
+// → Find migrations section
+
+webfetch("https://www.prisma.io/docs/concepts/components/prisma-migrate")
+context7_resolve-library-id("prisma")
+context7_query-docs(libraryId, "migration workflow production")
+
+grep_app_searchGitHub(
+  query: "prisma migrate deploy",
+  language: ["YAML", "JSON"]
+)
+
+// Response:
+{`<results>`}
+<files>
+- https://www.prisma.io/docs/concepts/components/prisma-migrate
+- https://github.com/prisma/prisma-examples/blob/main/.github/workflows/deploy.yml#L23-L28
+</files>
+
+{`<answer>`}
+Prisma migration workflow:
+
+**Development** (prisma migrate dev):
+- Creates migration files
+- Applies to dev database  
+- Resets database if needed
+- Updates Prisma Client
+
+**Production** (prisma migrate deploy):
+- Only applies pending migrations
+- Never resets database
+- Fails safely if migration conflicts
+- Used in CI/CD pipelines
+
+**Evidence** ([official docs](https://www.prisma.io/docs/concepts/components/prisma-migrate#migration-workflows)):
+
+```json
+// package.json scripts
+{
+  "migrate:dev": "prisma migrate dev",
+  "migrate:deploy": "prisma migrate deploy",
+  "migrate:reset": "prisma migrate reset"
+}
+```
+
+**Production deployment pattern** ([Prisma Examples](https://github.com/prisma/prisma-examples/blob/abc123/.github/workflows/deploy.yml#L23-L28)):
+
+```yaml
+- name: Run migrations
+  run: npx prisma migrate deploy
+  env:
+    DATABASE_URL: ${{ secrets.DATABASE_URL }}
+```
+
+**Rollback strategy**: Prisma doesn't support automatic rollback. 
+Approach: Create new migration that reverses changes.
+
+**Common pitfalls**:
+1. Using `migrate dev` in production (resets data!)
+2. Not committing migration files to git
+3. Running migrations after deployment (run BEFORE)
+4. Manual schema edits (always use migrations)
+{`</answer>`}
+
+{`<next_steps>`}
+Ready to configure - you have official workflow and production examples.
+Set up CI/CD with `prisma migrate deploy` before application starts.
+{`</next_steps>`}
+{`</results>`}
+```
+
+### Example 2: Implementation Reference (TYPE B)
+
+```typescript
+task(
+  subagent_type="librarian",
+  run_in_background=true,
+  description="How does tRPC implement type-safe client calls",
+  prompt="[CONTEXT]: Understanding tRPC internals for debugging type errors.
+          
+          [GOAL]: Understand how tRPC generates type-safe client from server router.
+          
+          [REQUEST]: Show me the actual implementation - where and how tRPC 
+          maps server procedures to client methods with full type inference."
+)
+
+// Librarian execution:
+gh repo clone trpc/trpc ${TMPDIR}/trpc -- --depth 1
+cd ${TMPDIR}/trpc && git rev-parse HEAD
+// → abc123def456...
+
+grep -r "createTRPCProxyClient" packages/client/src/
+// → Found implementation
+
+read packages/client/src/createTRPCProxyClient.ts
+
+// Response:
+{`<results>`}
+<files>
+- https://github.com/trpc/trpc/blob/abc123def456/packages/client/src/createTRPCProxyClient.ts#L45-L89
+</files>
+
+{`<answer>`}
+tRPC uses TypeScript's Proxy to create type-safe client calls.
+
+**Implementation** ([source](https://github.com/trpc/trpc/blob/abc123def456/packages/client/src/createTRPCProxyClient.ts#L45-L89)):
+
+```typescript
+export function createTRPCProxyClient<TRouter extends AnyRouter>(
+  opts: CreateTRPCProxyClientOptions<TRouter>,
+) {
+  return createRecursiveProxy((opts) => {
+    const path = [...opts.path];
+    const procedure = path.pop()!;
+    
+    // Map to HTTP request
+    return httpBatchLink({
+      url: opts.url,
+      procedure,
+      path,
+    });
+  }) as CreateTRPCProxyClient<TRouter>;
+}
+```
+
+**How type inference works**:
+
+1. Server defines router:
+   ```typescript
+   const appRouter = router({
+     getUser: publicProcedure.query(() => ({ name: 'Alice' }))
+   })
+   type AppRouter = typeof appRouter
+   ```
+
+2. Client receives `AppRouter` type:
+   ```typescript
+   const client = createTRPCProxyClient<AppRouter>({ url: '...' })
+   ```
+
+3. Proxy intercepts property access:
+   - `client.getUser.query()` → Proxy catches 'getUser' path
+   - TypeScript infers return type from `AppRouter`
+   - Runtime makes HTTP call to `/getUser`
+
+4. Full type safety:
+   - Input validation from server procedure
+   - Output type from server return type  
+   - No manual type definitions needed
+
+**Key insight**: Zero runtime overhead - types are compile-time only, 
+Proxy just maps method calls to HTTP requests.
+{`</answer>`}
+
+{`<next_steps>`}
+Type error likely in router definition or generic constraints.
+Check AppRouter type export and client generic parameter.
+{`</next_steps>`}
+{`</results>`}
+```
+
+## Date Awareness
+
+**CRITICAL**: Librarian must use current year in searches.
+
+```typescript
+// CURRENT YEAR: 2026
+
+// WRONG
+websearch("Next.js 14 documentation 2025")
+
+// CORRECT  
+websearch("Next.js 14 documentation 2026")
+websearch("React Server Components 2026")
+```
+
+**Filter outdated results**: When 2025 results conflict with 2026 information, prioritize 2026.
+
+## Failure Recovery
+
+| Failure | Recovery Strategy |
+|---------|------------------|
+| context7 not found | Clone repo, read source + README directly |
+| grep_app no results | Broaden query, try concept instead of exact name |
+| gh API rate limit | Use cloned repo in temp directory |
+| Repo not found | Search for forks or mirrors |
+| Sitemap not found | Try `/sitemap-0.xml`, `/sitemap_index.xml`, or parse navigation |
+| Versioned docs not found | Fall back to latest version, note in response |
+| Uncertain | **STATE UNCERTAINTY**, propose hypothesis |
+
+## Communication Rules
+
+<Check>**NO TOOL NAMES** - Say "I'll search the codebase" not "I'll use grep_app"</Check>
+<Check>**NO PREAMBLE** - Answer directly, skip "I'll help you with..."</Check>
+<Check>**ALWAYS CITE** - Every code claim needs a permalink</Check>
+<Check>**USE MARKDOWN** - Code blocks with language identifiers</Check>
+<Check>**BE CONCISE** - Facts > opinions, evidence > speculation</Check>
+
+## Configuration
+
+Customize Librarian in `oh-my-opencode.jsonc`:
+
+```jsonc
+{
+  "agents": {
+    "librarian": {
+      "model": "google/gemini-3-flash",
+      "temperature": 0.1,
+      "prompt_append": "Additional search guidelines...",
+      "disable": false
+    }
+  }
+}
+```
+
+## Best Practices
+
+<Check>**Fire in parallel** - Launch 2-5 librarians with different search angles</Check>
+<Check>**Run in background** - Always use `run_in_background=true`</Check>
+<Check>**Provide context** - CONTEXT/GOAL/DOWNSTREAM/REQUEST structure</Check>
+<Check>**Cite everything** - All claims backed by permalinks</Check>
+<Check>**Use current year** - 2026, not 2025 in searches</Check>
+
+<Warning>**Never use for internal code** - Use Explore agent for your codebase</Warning>
+<Warning>**Never block on librarian** - Always background, collect results later</Warning>
+<Warning>**Never single search** - Vary queries for comprehensive coverage</Warning>
+
+## Related Agents
+
+- [Explore](/api/agents/explore) - For internal codebase searches (not external libraries)
+- [Sisyphus](/api/agents/sisyphus) - Orchestrator that fires librarians in parallel
+- [Hephaestus](/api/agents/hephaestus) - Autonomous worker that uses librarian for research

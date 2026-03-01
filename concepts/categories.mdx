@@ -1,0 +1,784 @@
+---
+title: Category System
+description: 8 built-in categories, model mapping, and how categories route work to optimal models
+---
+
+## Overview
+
+The category system routes tasks to optimal models based on **task type**, not model name. You delegate by **intent** (visual work, deep logic, quick fix), and the system picks the right model automatically.
+
+## The 8 Built-In Categories
+
+**File**: `src/tools/delegate-task/constants.ts:210`
+
+| Category | Default Model | Variant | Domain |
+|----------|---------------|---------|--------|
+| **visual-engineering** | google/gemini-3.1-pro | high | Frontend, UI/UX, design, styling, animation |
+| **ultrabrain** | openai/gpt-5.3-codex | xhigh | Hard logic, complex architecture |
+| **deep** | openai/gpt-5.3-codex | medium | Goal-oriented autonomous problem-solving |
+| **artistry** | google/gemini-3.1-pro | high | Creative approaches beyond standard patterns |
+| **quick** | anthropic/claude-haiku-4-5 | - | Trivial tasks, single file changes |
+| **unspecified-low** | anthropic/claude-sonnet-4-6 | - | Moderate effort, doesn't fit other categories |
+| **unspecified-high** | anthropic/claude-opus-4-6 | max | High effort, doesn't fit other categories |
+| **writing** | kimi-for-coding/k2p5 | - | Documentation, prose, technical writing |
+
+## How Categories Work
+
+### Category-Based Delegation
+
+Instead of:
+```typescript
+// ❌ Manual model selection (old way)
+call_omo_agent(model="gemini-3.1-pro", prompt="Build navbar")
+```
+
+You use:
+```typescript
+// ✅ Category-based routing (new way)
+task(
+  category="visual-engineering",
+  load_skills=["tailwind", "playwright"],
+  prompt="Build responsive navbar with mobile menu"
+)
+```
+
+**What happens**:
+1. Category resolver looks up `visual-engineering`
+2. Finds default model: `gemini-3.1-pro` with variant `high`
+3. Checks model availability
+4. Falls back if unavailable (see [Fallback Chain](#fallback-chains))
+5. Spawns **Sisyphus-Junior** with category prompt + skills
+6. Returns result
+
+### Category Resolution Pipeline
+
+**File**: `src/tools/delegate-task/category-resolver.ts`
+
+```typescript
+function resolveCategory(categoryName: string) {
+  // 1. Check user-defined categories (config)
+  const userCategory = pluginConfig.categories?.[categoryName]
+  if (userCategory) return userCategory
+  
+  // 2. Fall back to built-in categories
+  const builtinCategory = DEFAULT_CATEGORIES[categoryName]
+  if (builtinCategory) return builtinCategory
+  
+  // 3. Error if unknown
+  throw new Error(`Unknown category: ${categoryName}`)
+}
+```
+
+**Model Selection** (`src/tools/delegate-task/model-selection.ts`):
+
+```typescript
+const category = resolveCategory(categoryName)
+const availableModels = await fetchAvailableModels()
+
+if (availableModels.has(category.model)) {
+  return { model: category.model, variant: category.variant }
+}
+
+// Fallback chain
+const fallback = CATEGORY_MODEL_REQUIREMENTS[categoryName]
+for (const entry of fallback.fallbackChain) {
+  if (isAvailable(entry.model)) {
+    return { model: entry.model, variant: entry.variant }
+  }
+}
+```
+
+## Category Profiles
+
+### visual-engineering
+
+**Model**: `google/gemini-3.1-pro` (variant: `high`)
+
+**Use For**:
+- Frontend implementation
+- UI/UX design
+- Styling and layout
+- Animations and transitions
+- Component libraries
+- Responsive design
+
+**Category Prompt** (`src/tools/delegate-task/constants.ts:8`):
+
+```
+Design-first mindset:
+- Bold aesthetic choices over safe defaults
+- Unexpected layouts, asymmetry, grid-breaking elements
+- Distinctive typography (avoid: Arial, Inter, Roboto, Space Grotesk)
+- Cohesive color palettes with sharp accents
+- High-impact animations with staggered reveals
+- Atmosphere: gradient meshes, noise textures, layered transparencies
+
+AVOID: Generic fonts, purple gradients on white, predictable layouts
+```
+
+**Why Gemini**: Excels at visual understanding, design patterns, and creative layouts.
+
+**Example**:
+
+```typescript
+task(
+  category="visual-engineering",
+  load_skills=["tailwind", "framer-motion"],
+  prompt=`Create a hero section with:
+- Full-screen gradient background (not purple)
+- Animated text reveal on scroll
+- Asymmetric layout with CTA button
+- Mobile-responsive breakpoints
+
+Match design system in styles/theme.ts`
+)
+```
+
+**Fallback Chain**:
+```typescript
+[
+  { model: "gemini-3.1-pro", variant: "high" },
+  { model: "glm-5" },
+  { model: "claude-opus-4-6", variant: "max" }
+]
+```
+
+### ultrabrain
+
+**Model**: `openai/gpt-5.3-codex` (variant: `xhigh`)
+
+**Use For**:
+- Deep logical reasoning
+- Complex architecture
+- System design
+- Algorithm implementation
+- Performance optimization
+- Hard debugging
+
+**Category Prompt** (`src/tools/delegate-task/constants.ts:22`):
+
+```
+CRITICAL - CODE STYLE REQUIREMENTS:
+1. BEFORE writing ANY code, SEARCH the existing codebase for similar patterns
+2. Your code MUST match project conventions - blend in seamlessly
+3. Write READABLE code - no clever tricks
+4. If unsure about style, explore more files until you find the pattern
+
+Strategic advisor mindset:
+- Bias toward simplicity: least complex solution
+- Leverage existing code/patterns over new components
+- One clear recommendation with effort estimate (Quick/Short/Medium/Large)
+
+Response format:
+- Bottom line (2-3 sentences)
+- Action plan (numbered steps)
+- Risks and mitigations
+```
+
+**Why GPT-5.3-codex**: Strongest reasoning capabilities for complex logical problems.
+
+**Example**:
+
+```typescript
+task(
+  category="ultrabrain",
+  load_skills=["algorithms", "performance"],
+  prompt=`GOAL: Optimize database query performance.
+
+Context:
+- User search queries take 3-5 seconds
+- 1M+ records in users table
+- Current query does full table scan
+
+Explore the codebase, identify bottlenecks, propose indexing strategy.`
+)
+```
+
+**Caller Warning**: This category uses a high-capability model. Give **clear goals**, not step-by-step instructions. The model figures out implementation.
+
+**Fallback Chain**:
+```typescript
+[
+  { model: "gpt-5.3-codex", variant: "xhigh" },
+  { model: "gemini-3.1-pro", variant: "high" },
+  { model: "claude-opus-4-6", variant: "max" }
+]
+```
+
+### deep
+
+**Model**: `openai/gpt-5.3-codex` (variant: `medium`)
+
+**Use For**:
+- Autonomous goal-driven tasks
+- Hairy problems requiring deep understanding
+- End-to-end feature implementation
+- Research → implement workflows
+
+**Category Prompt** (`src/tools/delegate-task/constants.ts:177`):
+
+```
+CRITICAL - AUTONOMOUS EXECUTION MINDSET:
+You are NOT an interactive assistant. You are an autonomous problem-solver.
+
+BEFORE making ANY changes:
+1. SILENTLY explore the codebase extensively (5-15 minutes of reading is normal)
+2. Read related files, trace dependencies, understand full context
+3. Build complete mental model
+4. DO NOT ask clarifying questions - the goal is already defined
+
+Autonomous executor mindset:
+- You receive a GOAL, not step-by-step instructions
+- Figure out HOW to achieve the goal yourself
+- Thorough research before any action
+
+Response format:
+- Minimal status updates (user trusts your autonomy)
+- Focus on results, not play-by-play progress
+- Report completion with summary of changes
+```
+
+**Difference from ultrabrain**:
+- **ultrabrain**: Hard logic problems, architecture decisions
+- **deep**: Goal-driven autonomous execution, less guidance needed
+
+**Example**:
+
+```typescript
+task(
+  category="deep",
+  load_skills=["testing-patterns"],
+  prompt=`GOAL: Implement user authentication with JWT.
+
+Requirements:
+- Login/signup endpoints
+- Token refresh mechanism
+- Protected routes
+- Match existing API patterns
+
+Explore auth patterns in the codebase, implement end-to-end.`
+)
+```
+
+**Requires Model**: `gpt-5.3-codex` - Only activates if available.
+
+**Fallback Chain**:
+```typescript
+[
+  { model: "gpt-5.3-codex", variant: "medium" },
+  { model: "claude-opus-4-6", variant: "max" },
+  { model: "gemini-3.1-pro", variant: "high" }
+]
+```
+
+### artistry
+
+**Model**: `google/gemini-3.1-pro` (variant: `high`)
+
+**Use For**:
+- Highly creative tasks
+- Unconventional approaches
+- Novel combinations
+- Artistic expression
+- Content generation
+
+**Category Prompt** (`src/tools/delegate-task/constants.ts:44`):
+
+```
+Artistic genius mindset:
+- Push far beyond conventional boundaries
+- Explore radical, unconventional directions
+- Surprise and delight: unexpected twists, novel combinations
+- Rich detail and vivid expression
+- Break patterns deliberately when it serves creative vision
+
+Approach:
+- Generate diverse, bold options first
+- Embrace ambiguity and wild experimentation
+- Balance novelty with coherence
+```
+
+**Why Gemini**: Strong creative capabilities, good at novel pattern generation.
+
+**Example**:
+
+```typescript
+task(
+  category="artistry",
+  load_skills=["storytelling"],
+  prompt=`Create 5 unique landing page concepts for a meditation app.
+
+Requirements:
+- Each concept must feel distinct
+- Avoid clichés (lotus flowers, sunset gradients)
+- Emphasize emotional atmosphere
+- One concept should be deliberately unconventional`
+)
+```
+
+**Requires Model**: `gemini-3.1-pro` - Only activates if available.
+
+**Fallback Chain**:
+```typescript
+[
+  { model: "gemini-3.1-pro", variant: "high" },
+  { model: "claude-opus-4-6", variant: "max" },
+  { model: "gpt-5.2" }
+]
+```
+
+### quick
+
+**Model**: `anthropic/claude-haiku-4-5`
+
+**Use For**:
+- Trivial tasks
+- Single file changes
+- Typo fixes
+- Simple modifications
+- No reasoning required
+
+**Category Prompt** (`src/tools/delegate-task/constants.ts:61`):
+
+```
+Efficient execution mindset:
+- Fast, focused, minimal overhead
+- Get to the point immediately
+- No over-engineering
+- Simple solutions for simple problems
+
+Approach:
+- Minimal viable implementation
+- Skip unnecessary abstractions
+- Direct and concise
+```
+
+**Caller Warning**:
+
+```
+THIS CATEGORY USES A LESS CAPABLE MODEL (claude-haiku-4-5).
+
+Your prompt MUST be EXHAUSTIVELY EXPLICIT:
+
+MUST DO:
+1. [Specific action with exact details]
+2. [Another specific action]
+
+MUST NOT DO:
+- [Forbidden action + why]
+- [Another forbidden action]
+
+EXPECTED OUTPUT:
+- [Exact deliverable description]
+- [Success criteria / verification]
+
+Vague instructions → unpredictable results.
+```
+
+**Why this matters**: Haiku is fast and cheap but has limited reasoning. Explicit instructions prevent drift.
+
+**Example**:
+
+```typescript
+task(
+  category="quick",
+  prompt=`TASK: Fix typo in README.md line 42
+
+MUST DO:
+1. Open README.md
+2. Find line 42: "documentaiton"
+3. Change to: "documentation"
+4. Save file
+
+MUST NOT DO:
+- Make any other changes
+- Reformat file
+- Add comments
+
+EXPECTED OUTPUT:
+- Single edit to README.md
+- Only line 42 changed`
+)
+```
+
+**Fallback Chain**:
+```typescript
+[
+  { model: "claude-haiku-4-5" },
+  { model: "gemini-3-flash" },
+  { model: "gpt-5-nano" }
+]
+```
+
+### unspecified-low
+
+**Model**: `anthropic/claude-sonnet-4-6`
+
+**Use For**: Tasks that don't fit other categories but require moderate effort.
+
+**Selection Gate**:
+
+```
+BEFORE selecting this category, VERIFY:
+1. Task does NOT fit: quick, visual-engineering, ultrabrain, artistry, writing
+2. Task requires more than trivial effort but is NOT system-wide
+3. Scope is contained within a few files/modules
+
+If task fits ANY other category, DO NOT select unspecified-low.
+This is NOT a default choice - it's for genuinely unclassifiable moderate-effort work.
+```
+
+**Caller Warning**: Provide clear structure (MUST DO, MUST NOT DO, EXPECTED OUTPUT).
+
+**Example**:
+
+```typescript
+task(
+  category="unspecified-low",
+  prompt=`TASK: Add error logging to API endpoints.
+
+MUST DO:
+1. Find all API route files in src/api/
+2. Add try-catch blocks to each endpoint
+3. Log errors to logger.error() with context
+
+MUST NOT DO:
+- Change business logic
+- Add new dependencies
+
+EXPECTED OUTPUT:
+- All endpoints have error handling
+- Errors logged with request context`
+)
+```
+
+**Fallback Chain**:
+```typescript
+[
+  { model: "claude-sonnet-4-6" },
+  { model: "gpt-5.3-codex", variant: "medium" },
+  { model: "gemini-3-flash" }
+]
+```
+
+### unspecified-high
+
+**Model**: `anthropic/claude-opus-4-6` (variant: `max`)
+
+**Use For**: Tasks that don't fit other categories but require **substantial effort**.
+
+**Selection Gate**:
+
+```
+BEFORE selecting this category, VERIFY:
+1. Task does NOT fit: quick, visual-engineering, ultrabrain, artistry, writing
+2. Task requires substantial effort across multiple systems/modules
+3. Changes have broad impact or require careful coordination
+4. NOT just "complex" - must be genuinely unclassifiable AND high-effort
+
+If task is unclassifiable but moderate-effort, use unspecified-low instead.
+```
+
+**Example**:
+
+```typescript
+task(
+  category="unspecified-high",
+  prompt=`TASK: Migrate from REST to GraphQL.
+
+Context:
+- 20+ REST endpoints
+- 3 client apps (web, mobile, admin)
+- Must maintain backward compatibility during migration
+
+Requirements:
+- Design GraphQL schema
+- Implement resolvers
+- Update clients incrementally
+- Document migration guide`
+)
+```
+
+**Fallback Chain**:
+```typescript
+[
+  { model: "claude-opus-4-6", variant: "max" },
+  { model: "gpt-5.2", variant: "high" },
+  { model: "gemini-3.1-pro" }
+]
+```
+
+### writing
+
+**Model**: `kimi-for-coding/k2p5`
+
+**Use For**:
+- Documentation
+- README files
+- Technical writing
+- Blog posts
+- API documentation
+
+**Category Prompt** (`src/tools/delegate-task/constants.ts:151`):
+
+```
+Wordsmith mindset:
+- Clear, flowing prose
+- Appropriate tone and voice
+- Engaging and readable
+- Proper structure and organization
+
+ANTI-AI-SLOP RULES (NON-NEGOTIABLE):
+- NEVER use em dashes (—) or en dashes (–). Use commas, periods, ellipses, line breaks.
+- Remove AI phrases: "delve", "it's important to note", "leverage", "utilize", "robust"
+- Pick plain words: "use" not "utilize", "start" not "commence"
+- Use contractions: "don't" not "do not"
+- Vary sentence length
+- NEVER start consecutive sentences with the same word
+- No filler openings: "In today's world...", "As we all know..."
+- Write like a human, not a corporate template
+```
+
+**Why Kimi K2.5**: Excellent at natural writing, avoids AI slop patterns.
+
+**Example**:
+
+```typescript
+task(
+  category="writing",
+  load_skills=["technical-writing"],
+  prompt=`Write API documentation for the /api/users endpoint.
+
+Include:
+- Endpoint description
+- Request/response examples (JSON)
+- Error codes and meanings
+- Authentication requirements
+
+Tone: Technical but approachable. Avoid corporate jargon.`
+)
+```
+
+**Fallback Chain**:
+```typescript
+[
+  { model: "kimi-k2.5-free" },
+  { model: "gemini-3-flash" },
+  { model: "claude-sonnet-4-6" }
+]
+```
+
+## Fallback Chains
+
+**File**: `src/shared/model-requirements.ts:95`
+
+Every category has a fallback chain for resilience:
+
+```typescript
+export const CATEGORY_MODEL_REQUIREMENTS: Record<string, ModelRequirement> = {
+  "visual-engineering": {
+    fallbackChain: [
+      { providers: ["google", "github-copilot", "opencode"], model: "gemini-3.1-pro", variant: "high" },
+      { providers: ["zai-coding-plan", "opencode"], model: "glm-5" },
+      { providers: ["anthropic", "github-copilot", "opencode"], model: "claude-opus-4-6", variant: "max" }
+    ]
+  },
+  // ...
+}
+```
+
+**Resolution Logic**:
+
+1. Try first entry: `gemini-3.1-pro` via google/github-copilot/opencode
+2. If unavailable, try second: `glm-5` via zai-coding-plan/opencode
+3. If unavailable, try third: `claude-opus-4-6` via anthropic/github-copilot/opencode
+4. If all fail, error
+
+**Provider Checking** (`src/shared/model-availability.ts`):
+
+```typescript
+function isAvailable(entry: FallbackEntry): boolean {
+  const hasProvider = entry.providers.some(p => connectedProviders.includes(p))
+  const hasModel = availableModels.has(entry.model)
+  return hasProvider && hasModel
+}
+```
+
+## Custom Categories
+
+You can define custom categories in config:
+
+```jsonc
+{
+  "categories": {
+    "backend-api": {
+      "model": "openai/gpt-5.3-codex",
+      "variant": "high",
+      "description": "Backend API development"
+    },
+    "mobile": {
+      "model": "google/gemini-3.1-pro",
+      "variant": "high",
+      "description": "Mobile app development (React Native, Flutter)"
+    }
+  }
+}
+```
+
+**Usage**:
+
+```typescript
+task(
+  category="backend-api",
+  load_skills=["express-api", "database-patterns"],
+  prompt="Implement user registration endpoint"
+)
+```
+
+**Custom Category Prompt**:
+
+Custom categories don't get automatic prompts. You can add prompts via skills:
+
+```markdown
+---
+name: backend-api-mindset
+description: Backend API development mindset
+---
+
+# Backend API Mindset
+
+- RESTful design principles
+- Proper error handling with HTTP status codes
+- Input validation and sanitization
+- Database transactions where needed
+```
+
+Then:
+
+```typescript
+task(
+  category="backend-api",
+  load_skills=["backend-api-mindset", "express-api"],
+  prompt="..."
+)
+```
+
+## Category Selection Guide
+
+### Decision Tree
+
+```
+Is it visual/UI work?
+  YES → visual-engineering
+  NO → Continue
+
+Is it hard logic or architecture?
+  YES → Is it goal-driven autonomous?
+    YES → deep
+    NO → ultrabrain
+  NO → Continue
+
+Is it creative/unconventional?
+  YES → artistry
+  NO → Continue
+
+Is it documentation/writing?
+  YES → writing
+  NO → Continue
+
+Is it trivial (single file, typo)?
+  YES → quick
+  NO → Continue
+
+Is it moderate effort?
+  YES → unspecified-low
+  NO → unspecified-high
+```
+
+### Examples by Category
+
+| Task | Category | Reason |
+|------|----------|--------|
+| Build responsive navbar | visual-engineering | UI component |
+| Optimize database query | ultrabrain | Complex logic |
+| Implement OAuth from scratch | deep | Autonomous goal-driven |
+| Design 5 landing page concepts | artistry | Creative exploration |
+| Fix typo in README | quick | Trivial change |
+| Add logging to endpoints | unspecified-low | Moderate, doesn't fit others |
+| Migrate REST to GraphQL | unspecified-high | High effort, broad impact |
+| Write API documentation | writing | Technical writing |
+
+## Model Variants
+
+**Definition**: Effort level adjustment for Anthropic models.
+
+**Supported Variants** (from OpenCode SDK):
+- `low`: Minimal reasoning effort
+- `medium`: Balanced (default)
+- `high`: Increased reasoning
+- `max`: Maximum reasoning effort
+- `xhigh`: Custom extended high (Oh My OpenCode specific)
+
+**Usage in Categories**:
+
+```typescript
+// ultrabrain uses xhigh for maximum reasoning
+{ model: "gpt-5.3-codex", variant: "xhigh" }
+
+// visual-engineering uses high for creative work
+{ model: "gemini-3.1-pro", variant: "high" }
+
+// quick uses no variant (default medium)
+{ model: "claude-haiku-4-5" }
+```
+
+**Implementation**: Variants are passed to `chat.params` hook, which sets Anthropic's effort level.
+
+## Performance Considerations
+
+### Model Speed vs Capability
+
+| Category | Model | Speed | Cost | Capability |
+|----------|-------|-------|------|------------|
+| quick | claude-haiku-4-5 | ⚡⚡⚡ | $ | Low |
+| unspecified-low | claude-sonnet-4-6 | ⚡⚡ | $$ | Medium |
+| visual-engineering | gemini-3.1-pro | ⚡⚡ | $$ | High |
+| ultrabrain | gpt-5.3-codex | ⚡ | $$$$ | Highest |
+| unspecified-high | claude-opus-4-6 | ⚡ | $$$$ | Highest |
+
+**Recommendation**: Use `quick` for trivial tasks to save cost/time. Reserve `ultrabrain`/`unspecified-high` for genuinely complex work.
+
+### Parallel Category Execution
+
+**Background execution** works across categories:
+
+```typescript
+// Fire 3 different categories in parallel
+task(category="visual-engineering", run_in_background=true, ...)
+task(category="ultrabrain", run_in_background=true, ...)
+task(category="writing", run_in_background=true, ...)
+
+// Collect results
+background_output(task_id=1)
+background_output(task_id=2)
+background_output(task_id=3)
+```
+
+Each task uses its optimal model simultaneously.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Orchestration" icon="diagram-project" href="/concepts/orchestration">
+    Learn how agents delegate tasks using categories
+  </Card>
+  <Card title="Agents" icon="users" href="/concepts/agents">
+    Understand which agents use which categories
+  </Card>
+  <Card title="Configuration" icon="gear" href="/reference/configuration">
+    Customize category model assignments
+  </Card>
+  <Card title="Skills" icon="book" href="/reference/skills">
+    Load skills to enhance category execution
+  </Card>
+</CardGroup>

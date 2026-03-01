@@ -1,0 +1,466 @@
+---
+title: Skill System
+description: Four-tier skill discovery, YAML frontmatter, and built-in skills for specialized capabilities
+---
+
+Oh My OpenCode's skill system provides modular capabilities through SKILL.md files with YAML frontmatter. Skills can include custom prompts, MCP servers, and tool restrictions.
+
+## Skill Architecture
+
+Skills are discovered from four scopes with priority-based deduplication:
+
+<Steps>
+  <Step title="Project Scope">
+    `.opencode/skills/` in current project  
+    **Priority:** Highest (overrides all others)
+  </Step>
+  <Step title="OpenCode Scope">
+    `oh-my-opencode/src/features/builtin-skills/`  
+    **Priority:** Second (built-in skills)
+  </Step>
+  <Step title="User Scope">
+    `~/.config/opencode/skills/`  
+    **Priority:** Third (user customizations)
+  </Step>
+  <Step title="Global Scope">
+    System-wide skill directories  
+    **Priority:** Lowest
+  </Step>
+</Steps>
+
+## Skill Structure
+
+### SKILL.md Format
+
+Skills are defined in `SKILL.md` files with YAML frontmatter:
+
+```markdown
+---
+name: skill-name
+description: Brief description for agent selection
+mcpServers:
+  server-name:
+    command: npx
+    args: ["@package/name@latest"]
+allowedTools:
+  - "Bash(pattern:*)"
+  - "Read"
+providersGating:
+  - anthropic
+---
+
+# Skill Content
+
+Markdown content injected into agent context when skill is loaded.
+```
+
+### YAML Frontmatter Fields
+
+<ParamField path="name" type="string" required>
+  Unique skill identifier (kebab-case)
+</ParamField>
+
+<ParamField path="description" type="string" required>
+  Description shown in agent selection UI
+</ParamField>
+
+<ParamField path="mcpServers" type="object">
+  MCP server configurations (stdio or HTTP)
+  
+  ```yaml
+  mcpServers:
+    playwright:
+      command: npx
+      args: ["@playwright/mcp@latest"]
+  ```
+</ParamField>
+
+<ParamField path="allowedTools" type="string[]">
+  Tool name patterns (glob-style wildcards)
+  
+  ```yaml
+  allowedTools:
+    - "Bash(agent-browser:*)"
+    - "Read"
+    - "Write"
+  ```
+</ParamField>
+
+<ParamField path="providersGating" type="string[]">
+  Restrict skill to specific model providers
+  
+  ```yaml
+  providersGating:
+    - anthropic  # Only available for Claude models
+  ```
+</ParamField>
+
+## Built-in Skills
+
+Oh My OpenCode includes 6 built-in skills:
+
+### git-master
+
+**Source:** `src/features/builtin-skills/skills/git-master.ts`  
+**Lines:** 1111 LOC  
+**Description:** Git expert combining commit architecture, rebase surgery, and history archaeology
+
+<Accordion title="Capabilities">
+
+**Three Modes:**
+1. **COMMIT** - Atomic commits with dependency ordering
+2. **REBASE** - History rewriting and conflict resolution
+3. **HISTORY_SEARCH** - Find when/where changes were introduced
+
+**Commit Mode Features:**
+- Multi-commit default (NEVER one giant commit)
+- Style detection (semantic, plain, sentence, short)
+- Language detection (Korean/English)
+- Dependency ordering (utilities → models → services → API → config)
+- Test/implementation pairing
+
+**Rebase Mode Features:**
+- Interactive squash/reorder
+- Autosquash workflow
+- Rebase onto (branch update)
+- Conflict resolution
+
+**History Search Features:**
+- Pickaxe search (`git log -S`)
+- Regex search (`git log -G`)
+- Git blame
+- Git bisect
+- File history tracking
+
+</Accordion>
+
+```typescript
+// Config location: src/features/builtin-skills/skills/git-master.ts:8
+export const gitMasterSkill: BuiltinSkill = {
+  name: "git-master",
+  description: "Git operations: commits, rebase, history search",
+  template: `...1111 lines of Git expertise...`,
+}
+```
+
+### playwright
+
+**Source:** `src/features/builtin-skills/skills/playwright.ts:3`  
+**Lines:** 312 LOC  
+**MCP:** `@playwright/mcp@latest`  
+**Description:** Browser automation via Playwright MCP
+
+<Accordion title="Features">
+
+- Page navigation and interaction
+- Element selection and manipulation
+- Screenshots and PDF generation
+- Network interception
+- Multi-browser support
+- Headless/headed modes
+
+</Accordion>
+
+```typescript
+export const playwrightSkill: BuiltinSkill = {
+  name: "playwright",
+  description: "MUST USE for browser tasks via Playwright MCP",
+  template: `# Playwright Browser Automation...`,
+  mcpConfig: {
+    playwright: {
+      command: "npx",
+      args: ["@playwright/mcp@latest"],
+    },
+  },
+}
+```
+
+### agent-browser
+
+**Source:** `src/features/builtin-skills/skills/playwright.ts:17`  
+**Lines:** 296 LOC (embedded in playwright.ts)  
+**CLI:** `agent-browser`  
+**Description:** Browser automation via agent-browser CLI
+
+<Accordion title="Command Reference">
+
+**Navigation:**
+```bash
+agent-browser open <url>
+agent-browser back/forward/reload
+agent-browser close
+```
+
+**Snapshot (page analysis):**
+```bash
+agent-browser snapshot -i    # Interactive elements only
+agent-browser snapshot -c    # Compact output
+agent-browser snapshot -d 3  # Limit depth
+```
+
+**Interactions (use @refs from snapshot):**
+```bash
+agent-browser click @e1
+agent-browser fill @e2 "text"
+agent-browser press Enter
+agent-browser hover @e1
+```
+
+**Get information:**
+```bash
+agent-browser get text @e1
+agent-browser get html @e1
+agent-browser get url
+```
+
+**Screenshots & Recording:**
+```bash
+agent-browser screenshot path.png
+agent-browser record start ./demo.webm
+agent-browser record stop
+```
+
+**Sessions & Profiles:**
+```bash
+agent-browser --session test1 open site-a.com
+agent-browser --profile ~/.myapp-profile open myapp.com
+```
+
+</Accordion>
+
+```typescript
+export const agentBrowserSkill: BuiltinSkill = {
+  name: "agent-browser",
+  description: "MUST USE for browser tasks via agent-browser CLI",
+  template: `...296 lines of CLI reference...`,
+  allowedTools: ["Bash(agent-browser:*)"],
+}
+```
+
+### playwright-cli
+
+**Source:** `src/features/builtin-skills/skills/playwright-cli.ts`  
+**Lines:** 268 LOC  
+**CLI:** `playwright-cli`  
+**Description:** Lightweight Playwright CLI wrapper
+
+### dev-browser
+
+**Source:** `src/features/builtin-skills/dev-browser/SKILL.md`  
+**Lines:** 221 LOC  
+**Description:** Development browser automation patterns
+
+### frontend-ui-ux
+
+**Source:** `src/features/builtin-skills/skills/frontend-ui-ux.ts:3`  
+**Lines:** 79 LOC  
+**Description:** Designer-turned-developer for stunning UI/UX
+
+<Accordion title="Design Principles">
+
+**Work Principles:**
+1. Complete what's asked
+2. Leave it better
+3. Study before acting
+4. Blend seamlessly
+5. Be transparent
+
+**Aesthetic Guidelines:**
+- **Typography:** Distinctive fonts (avoid Arial, Inter, Roboto, Space Grotesk)
+- **Color:** Cohesive palettes with sharp accents
+- **Motion:** High-impact moments, scroll-triggering, CSS-first
+- **Spatial:** Unexpected layouts, asymmetry, generous negative space
+
+**Anti-Patterns:**
+- Generic fonts
+- Cliched color schemes (purple gradients on white)
+- Predictable layouts
+- Cookie-cutter designs
+
+</Accordion>
+
+```typescript
+export const frontendUiUxSkill: BuiltinSkill = {
+  name: "frontend-ui-ux",
+  description: "Designer-turned-developer for stunning UI/UX",
+  template: `# Role: Designer-Turned-Developer...`,
+}
+```
+
+## Browser Provider Selection
+
+Browser skills are selected via `browser_automation_engine` config:
+
+```jsonc
+{
+  "browser_automation_engine": "agent-browser"  // or "playwright" or "playwright-cli"
+}
+```
+
+**Default:** `playwright`
+
+## Skill Discovery
+
+Implemented in `src/features/opencode-skill-loader/` (25 files, ~3.2k LOC)
+
+### Discovery Process
+
+```typescript
+// src/features/opencode-skill-loader/skill-discovery.ts
+1. Scan 4 scopes for SKILL.md files
+2. Parse YAML frontmatter
+3. Deduplicate by name (project > opencode > user > global)
+4. Resolve template variables
+5. Merge skill definitions
+```
+
+### Skill Loader Files
+
+<AccordionGroup>
+  <Accordion title="Core Files (6)">
+    - `skill-discovery.ts` - Multi-scope scanning
+    - `skill-directory-loader.ts` - Load from directory
+    - `skill-content.ts` - YAML frontmatter parsing
+    - `skill-deduplication.ts` - Priority-based deduplication
+    - `skill-template-resolver.ts` - Variable substitution
+    - `merger.ts` - Skill definition merging
+  </Accordion>
+  <Accordion title="MCP Integration (3)">
+    - `skill-mcp-config.ts` - MCP server extraction
+    - `src/features/skill-mcp-manager/` - MCP lifecycle (10 files)
+    - `connection.ts` - stdio/HTTP client management
+  </Accordion>
+  <Accordion title="Type Definitions (2)">
+    - `types.ts` - LoadedSkill, SkillDefinition
+    - `skill-definition-record.ts` - SkillDefinitionRecord
+  </Accordion>
+</AccordionGroup>
+
+## Skill MCP Manager
+
+Manages MCP servers embedded in skills.
+
+**Source:** `src/features/skill-mcp-manager/manager.ts`  
+**Pattern:** Per-session client lifecycle
+
+```typescript
+// src/features/skill-mcp-manager/manager.ts:9
+export class SkillMcpManager {
+  async getOrCreateClient(
+    info: SkillMcpClientInfo,
+    config: ClaudeCodeMcpServer
+  ): Promise<Client>
+
+  async listTools(info, context): Promise<Tool[]>
+  async callTool(info, context, name, args): Promise<unknown>
+  async disconnectSession(sessionID: string): Promise<void>
+}
+```
+
+### Connection Types
+
+<CodeGroup>
+
+```typescript stdio
+// src/features/skill-mcp-manager/stdio-client.ts
+{
+  command: "npx",
+  args: ["@playwright/mcp@latest"],
+  env: { NODE_ENV: "production" }
+}
+```
+
+```typescript http
+// src/features/skill-mcp-manager/http-client.ts
+{
+  url: "https://mcp.example.com/server",
+  headers: { "Authorization": "Bearer ..." },
+  oauth: { ... }
+}
+```
+
+</CodeGroup>
+
+## Configuration
+
+### Disable Skills
+
+```jsonc
+{
+  "disabled_skills": [
+    "playwright",
+    "git-master"
+  ]
+}
+```
+
+### Custom Skill Paths
+
+```jsonc
+{
+  "skills": {
+    "sources": [
+      ".opencode/skills",
+      "~/my-skills"
+    ],
+    "recursive": true
+  }
+}
+```
+
+### Agent Skill Assignment
+
+```jsonc
+{
+  "agents": {
+    "sisyphus": {
+      "skills": ["git-master", "frontend-ui-ux"]
+    },
+    "hephaestus": {
+      "skills": ["playwright"]
+    }
+  }
+}
+```
+
+## Creating Custom Skills
+
+1. Create `.opencode/skills/my-skill/SKILL.md`:
+
+```markdown
+---
+name: my-skill
+description: My custom skill
+mcpServers:
+  my-server:
+    command: node
+    args: ["./server.js"]
+allowedTools:
+  - "Bash(*)"
+---
+
+# My Skill
+
+Custom instructions injected into agent context.
+```
+
+2. Skill auto-discovered on next session
+3. Assign to agents via config
+
+## Source Files
+
+- **Built-in Skills:** `src/features/builtin-skills/skills/`
+- **Skill Loader:** `src/features/opencode-skill-loader/` (25 files)
+- **MCP Manager:** `src/features/skill-mcp-manager/` (10 files)
+- **Skill SKILL.md:** `src/features/builtin-skills/*/SKILL.md`
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="MCPs" href="/api/features/mcps">
+    MCP system and built-in servers
+  </Card>
+  <Card title="Hooks" href="/api/features/hooks">
+    Lifecycle hooks for extending behavior
+  </Card>
+</CardGroup>

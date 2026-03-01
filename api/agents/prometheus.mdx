@@ -1,0 +1,469 @@
+---
+title: "Prometheus Agent"
+description: "Strategic planner with interview mode and detailed work plan generation"
+---
+
+## Overview
+
+Prometheus is a strategic planning agent that creates detailed work plans through iterative questioning. Named after the Greek Titan who brought fire (knowledge) to humanity, Prometheus embodies foresight, strategic thinking, and meticulous planning.
+
+**Purpose**: Generate comprehensive, actionable work plans through interview-style clarification before implementation begins.
+
+<ParamField path="model" type="string" default="claude-opus-4-6">
+  Default model with extended thinking for strategic planning
+</ParamField>
+
+<ParamField path="mode" type="string" default="subagent">
+  Internal planning agent, not directly user-facing
+</ParamField>
+
+<ParamField path="temperature" type="number" default="0.1">
+  Low temperature for consistent, structured planning
+</ParamField>
+
+<ParamField path="thinking" type="object">
+  Extended thinking budget for complex planning scenarios
+  
+  ```json
+  {
+    "type": "enabled",
+    "budgetTokens": 32000
+  }
+  ```
+</ParamField>
+
+## Model Configuration
+
+### Default Model (Claude)
+
+```json
+{
+  "model": "claude-opus-4-6",
+  "variant": "max",
+  "thinking": {
+    "type": "enabled",
+    "budgetTokens": 32000
+  }
+}
+```
+
+### GPT Variant
+
+When using GPT models:
+
+```json
+{
+  "model": "gpt-5.2",
+  "variant": "high",
+  "reasoningEffort": "high"
+}
+```
+
+### Gemini Variant
+
+When using Gemini models:
+
+```json
+{
+  "model": "gemini-3.1-pro",
+  "variant": "high"
+}
+```
+
+## Fallback Chain
+
+Prometheus has a quality-focused fallback chain:
+
+<ResponseField name="Primary" type="string">
+  `anthropic/claude-opus-4-6` (variant: max)
+</ResponseField>
+
+<ResponseField name="Fallback 1" type="string">
+  `openai/gpt-5.2` (variant: high)
+</ResponseField>
+
+<ResponseField name="Fallback 2" type="string">
+  `opencode/kimi-k2.5-free`
+</ResponseField>
+
+<ResponseField name="Fallback 3" type="string">
+  `google/gemini-3.1-pro`
+</ResponseField>
+
+## Tool Permissions
+
+### Allowed Tools
+
+<ParamField path="edit" type="string" default="allow">
+  Can edit plan files (`.md` only, enforced by prometheus-md-only hook)
+</ParamField>
+
+<ParamField path="bash" type="string" default="allow">
+  Can run commands for codebase investigation
+</ParamField>
+
+<ParamField path="webfetch" type="string" default="allow">
+  Can fetch external documentation during planning
+</ParamField>
+
+<ParamField path="question" type="string" default="allow">
+  Can ask clarifying questions via OpenCode's QuestionTool
+</ParamField>
+
+### Blocked Tools
+
+Prometheus is a **planning-only** agent:
+
+- Cannot write new files (only edit plan markdown)
+- Cannot delegate to other agents
+- Cannot execute implementation work
+- Focused solely on plan generation
+
+## Core Capabilities
+
+### 1. Interview Mode
+
+Prometheus uses iterative questioning to clarify requirements:
+
+```markdown
+## Interview Phase
+
+I need to understand a few things before creating the plan:
+
+1. **Architecture preference**: Do you want to use REST or GraphQL for the API?
+   - Impact: Affects endpoint structure and data fetching patterns
+   - Default: I'll assume REST based on existing codebase patterns
+
+2. **Authentication approach**: Should we use JWT tokens or session-based auth?
+   - Impact: Changes security model and client-side storage
+   - Recommendation: JWT for stateless API
+
+3. **Database migration**: Should I plan for backward-compatible schema changes?
+   - Impact: Determines migration strategy and rollback complexity
+   - Risk: Breaking changes require coordinated deployment
+```
+
+### 2. Plan Generation
+
+Generates detailed, structured plans in markdown format:
+
+```markdown
+# Feature: User Authentication System
+
+## Overview
+Implement JWT-based authentication with role-based access control.
+
+## Prerequisites
+- [ ] Review existing user model
+- [ ] Check for existing auth middleware
+- [ ] Verify bcrypt installation
+
+## Implementation Tasks
+
+### Phase 1: Core Authentication
+- [ ] **T1.1**: Create JWT token service (`src/services/auth/token.ts`)
+  - Generate access tokens (15min expiry)
+  - Generate refresh tokens (7day expiry)
+  - Token validation and decoding
+  
+- [ ] **T1.2**: Implement auth middleware (`src/middleware/auth.ts`)
+  - Extract token from Authorization header
+  - Validate token signature
+  - Attach user to request object
+  - Handle expired tokens
+
+### Phase 2: User Endpoints
+- [ ] **T2.1**: POST /api/auth/register
+  - Validate email format and password strength
+  - Hash password with bcrypt
+  - Create user record
+  - Return access + refresh tokens
+  
+- [ ] **T2.2**: POST /api/auth/login
+  - Verify credentials
+  - Return tokens
+  
+- [ ] **T2.3**: POST /api/auth/refresh
+  - Validate refresh token
+  - Issue new access token
+
+### Phase 3: Testing
+- [ ] **T3.1**: Unit tests for token service
+- [ ] **T3.2**: Integration tests for auth endpoints
+- [ ] **T3.3**: E2E test for full auth flow
+
+## Risk Mitigation
+
+### Security
+- Store JWT secret in environment variable
+- Use httpOnly cookies for refresh tokens
+- Implement rate limiting on auth endpoints
+- Add CSRF protection
+
+### Performance
+- Cache token validation results (Redis)
+- Use short access token expiry
+- Implement token blacklist for logout
+
+## Verification Checklist
+- [ ] All tests passing
+- [ ] Security review completed
+- [ ] Documentation updated
+- [ ] API documented in Swagger/OpenAPI
+```
+
+### 3. High Accuracy Mode
+
+Thinking budget allows deep analysis:
+
+- Explores multiple implementation approaches
+- Identifies edge cases and failure modes
+- Maps dependencies between tasks
+- Estimates complexity and risk
+- Proposes mitigation strategies
+
+### 4. Plan Template System
+
+Uses structured templates for consistency:
+
+- **Overview**: High-level summary
+- **Prerequisites**: Pre-work and validations
+- **Implementation Tasks**: Phased breakdown with detailed steps
+- **Risk Mitigation**: Security, performance, reliability considerations
+- **Verification Checklist**: Success criteria
+
+## Planning Process
+
+### Phase 1: Requirement Gathering
+
+1. **Parse user request**: Extract explicit requirements
+2. **Identify implicit needs**: Infer unstated requirements
+3. **Detect ambiguities**: Find areas needing clarification
+4. **Formulate questions**: Ask targeted clarifying questions
+
+### Phase 2: Codebase Analysis
+
+1. **Search for patterns**: Find similar existing implementations
+2. **Check dependencies**: Identify required libraries/services
+3. **Assess impact**: Understand which systems are affected
+4. **Identify constraints**: Note architectural limitations
+
+### Phase 3: Plan Construction
+
+1. **Break down tasks**: Create atomic, trackable work items
+2. **Order dependencies**: Sequence tasks logically
+3. **Estimate complexity**: Tag each task with effort estimate
+4. **Add verification**: Define success criteria for each phase
+5. **Document risks**: Note potential issues and mitigations
+
+### Phase 4: Review & Refinement
+
+1. **Completeness check**: Verify all requirements covered
+2. **Clarity check**: Ensure tasks are actionable
+3. **Risk assessment**: Validate mitigation strategies
+4. **Final review**: User approval before handoff to Atlas
+
+## Plan File Structure
+
+Plans are saved to `.sisyphus/plans/{name}.md`:
+
+```
+.sisyphus/
+└── plans/
+    ├── user-authentication.md
+    ├── dark-mode-implementation.md
+    └── api-rate-limiting.md
+```
+
+Each plan follows this structure:
+
+```markdown
+# {Feature Name}
+
+## Overview
+{High-level summary}
+
+## Prerequisites
+- [ ] {Prerequisite task 1}
+- [ ] {Prerequisite task 2}
+
+## Implementation Tasks
+
+### Phase 1: {Phase Name}
+- [ ] **T1.1**: {Task description}
+  {Task details}
+  
+### Phase 2: {Phase Name}
+...
+
+## Risk Mitigation
+
+### {Risk Category}
+- {Mitigation strategy 1}
+- {Mitigation strategy 2}
+
+## Verification Checklist
+- [ ] {Verification item 1}
+- [ ] {Verification item 2}
+```
+
+## Usage Examples
+
+### Example 1: Feature Planning
+
+```typescript
+// User invokes Prometheus via /start-work or explicitly
+// Request: "Plan implementation of file upload feature with S3"
+
+// Prometheus: Interview mode
+"I need clarification on a few points before creating the plan:
+
+1. **File size limits**: What's the maximum file size we should support?
+   - Affects multipart upload strategy
+   - Recommendation: 100MB for standard, 5GB for large files
+
+2. **Access control**: Should uploaded files be public or private?
+   - Public: Direct S3 URLs
+   - Private: Pre-signed URLs with expiry
+   
+3. **File types**: Any restrictions on allowed file types?
+   - Security consideration: Prevent executable uploads
+   
+4. **Storage strategy**: Should we organize files by user, date, or type?
+   - Affects S3 bucket structure and retrieval patterns"
+
+// User provides answers
+// Prometheus generates detailed plan
+"Plan saved to .sisyphus/plans/file-upload-s3.md
+
+✓ 3 phases identified
+✓ 12 atomic tasks defined
+✓ 5 security mitigations documented
+✓ 8 verification criteria established
+
+Ready to execute with /start-work file-upload-s3"
+```
+
+### Example 2: Refactoring Plan
+
+```typescript
+// Request: "Create a plan to refactor the payment processing module"
+
+// Prometheus: Analysis phase
+"Analyzing existing payment module structure..."
+// Searches codebase for payment-related code
+// Identifies current architecture
+
+"Found payment logic spread across:
+- src/services/payment/stripe.ts (Stripe integration)
+- src/services/payment/paypal.ts (PayPal integration) 
+- src/routes/checkout.ts (Mixed business logic)
+- src/utils/currency.ts (Scattered helpers)
+
+Key issues identified:
+1. No abstraction over payment providers
+2. Business logic mixed with API routes
+3. Missing error recovery patterns
+4. No audit logging
+
+Proposed approach: Payment Strategy Pattern
+- Abstract payment provider interface
+- Centralize business logic in service layer
+- Add comprehensive error handling
+- Implement audit trail"
+
+// Generates comprehensive refactoring plan
+"Plan saved to .sisyphus/plans/payment-refactor.md
+
+✓ 4 phases (Extract, Abstract, Test, Migrate)
+✓ 15 tasks with detailed steps
+✓ Backward compatibility maintained
+✓ Rollback strategy documented"
+```
+
+## Behavioral Guidelines
+
+### Thoroughness Over Speed
+
+Prometheus prioritizes complete, accurate planning:
+
+- Takes time to understand requirements fully
+- Asks clarifying questions without hesitation
+- Explores edge cases and failure scenarios
+- Documents assumptions explicitly
+
+### Structured Communication
+
+All plans follow consistent structure:
+
+- Clear phase separation
+- Atomic, testable tasks
+- Explicit dependencies
+- Concrete verification criteria
+
+### Risk-Aware Planning
+
+Every plan includes risk assessment:
+
+- Security implications
+- Performance impact
+- Data migration risks
+- Backward compatibility concerns
+- Rollback strategies
+
+## Integration with Atlas
+
+Prometheus plans are executed by Atlas orchestrator:
+
+```bash
+# 1. Generate plan with Prometheus
+/start-work "implement user authentication"
+# Prometheus creates .sisyphus/plans/user-authentication.md
+
+# 2. Execute plan with Atlas
+# Atlas reads the plan file
+# Delegates tasks to appropriate agents/categories
+# Tracks progress via todos
+# Verifies completion
+```
+
+## Configuration
+
+Customize Prometheus in `oh-my-opencode.jsonc`:
+
+```jsonc
+{
+  "agents": {
+    "prometheus": {
+      "model": "anthropic/claude-opus-4-6",
+      "variant": "max",
+      "temperature": 0.1,
+      "thinking": {
+        "type": "enabled",
+        "budgetTokens": 32000
+      },
+      "prompt_append": "Additional planning guidelines...",
+      "disable": false
+    }
+  }
+}
+```
+
+## Best Practices
+
+<Check>**Ask clarifying questions** - Don't assume requirements</Check>
+<Check>**Break down into atomic tasks** - Each task should be independently completable</Check>
+<Check>**Document assumptions** - Make implicit requirements explicit</Check>
+<Check>**Include verification criteria** - Define what "done" means</Check>
+<Check>**Assess risks proactively** - Identify potential issues before implementation</Check>
+
+<Warning>**Never skip interview phase** - Incomplete requirements lead to flawed plans</Warning>
+<Warning>**Never create vague tasks** - Each task must be concrete and actionable</Warning>
+<Warning>**Never ignore edge cases** - Document failure scenarios and mitigations</Warning>
+
+## Related Agents
+
+- [Atlas](/api/agents/atlas) - Executes Prometheus plans via systematic orchestration
+- [Metis](/api/agents/metis) - Pre-planning analysis and requirement clarification
+- [Momus](/api/agents/momus) - Reviews and validates plans for completeness
+- [Sisyphus](/api/agents/sisyphus) - Can invoke Prometheus for complex planning needs

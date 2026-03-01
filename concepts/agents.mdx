@@ -1,0 +1,565 @@
+---
+title: Agent System
+description: 11 specialized agents, their roles, model assignments, and tool restrictions
+---
+
+## Overview
+
+Oh My OpenCode orchestrates **11 specialized agents**, each with a distinct role, default model, and tool permissions. Agents fall into three modes: **primary** (respects UI model selection), **subagent** (uses own fallback chain), and **all** (available in both contexts).
+
+## Agent Inventory
+
+| Agent | Default Model | Temp | Mode | Purpose |
+|-------|---------------|------|------|----------|
+| **Sisyphus** | claude-opus-4-6 | 0.1 | primary | Main orchestrator, plans + delegates |
+| **Hephaestus** | gpt-5.3-codex | 0.1 | primary | Autonomous deep worker (GPT-native) |
+| **Oracle** | gpt-5.2 | 0.1 | subagent | Read-only architectural consultation |
+| **Librarian** | gemini-3-flash | 0.1 | subagent | External docs/code search |
+| **Explore** | grok-code-fast-1 | 0.1 | subagent | Fast codebase grep |
+| **Multimodal-Looker** | gemini-3-flash | 0.1 | subagent | PDF/image/screenshot analysis |
+| **Metis** | claude-opus-4-6 | **0.3** | subagent | Pre-planning gap analysis |
+| **Momus** | gpt-5.2 | 0.1 | subagent | Plan review and validation |
+| **Atlas** | claude-sonnet-4-6 | 0.1 | primary | Todo-list orchestrator |
+| **Prometheus** | claude-opus-4-6 | 0.1 | internal | Strategic planning (interview mode) |
+| **Sisyphus-Junior** | claude-sonnet-4-6 | 0.1 | all | Category-spawned executor |
+
+<Note>
+**Metis** is the only agent with elevated temperature (0.3) to encourage creative gap discovery.
+</Note>
+
+## Agent Modes
+
+### Primary Agents
+
+**Definition**: Respect the UI-selected model, with fallback chain if unavailable.
+
+**Agents**: Sisyphus, Hephaestus, Atlas
+
+**Behavior**:
+```typescript
+// src/agents/builtin-agents/model-resolution.ts
+const model = uiSelectedModel || userOverride || fallbackChain[0] || systemDefault
+```
+
+If you select Claude Opus 4.6 in the OpenCode UI, Sisyphus uses that model (unless you override in config).
+
+### Subagents
+
+**Definition**: Use their own fallback chain, ignore UI selection.
+
+**Agents**: Oracle, Librarian, Explore, Multimodal-Looker, Metis, Momus
+
+**Behavior**:
+```typescript
+const model = userOverride || fallbackChain[0] || systemDefault
+// UI selection ignored for subagents
+```
+
+Subagents are invoked by primary agents via `call_omo_agent()` or `task()`. They optimize for their specific role regardless of user's UI choice.
+
+### All Mode
+
+**Definition**: Available in both primary and subagent contexts.
+
+**Agents**: Sisyphus-Junior
+
+**Usage**:
+- As primary: For simple tasks where Sisyphus is overkill
+- As subagent: Spawned by category delegation (`task(category="quick")`)
+
+## Agent Profiles
+
+### Sisyphus: The Main Orchestrator
+
+**File**: `src/agents/sisyphus.ts` (559 LOC)
+
+**Named After**: Greek myth - rolls the boulder every day, never stops, never gives up.
+
+**Role**: Main orchestration agent. Plans, delegates to specialists, drives tasks to completion.
+
+**Default Model**: `claude-opus-4-6` (variant: `max`)
+
+**Fallback Chain**:
+```typescript
+[
+  { providers: ["anthropic", "github-copilot", "opencode"], model: "claude-opus-4-6", variant: "max" },
+  { providers: ["opencode"], model: "kimi-k2.5-free" },
+  { providers: ["zai-coding-plan", "opencode"], model: "glm-5" },
+  { providers: ["opencode"], model: "big-pickle" }
+]
+```
+
+**Prompt Sections** (Dynamic, built from `src/agents/dynamic-agent-prompt-builder.ts`):
+- **Phase 0: Intent Gate** - Classifies user intent before acting
+- **Phase 1: Codebase Assessment** - Evaluates project discipline
+- **Phase 2A: Exploration & Research** - Tool selection table
+- **Phase 2B: Delegation** - Agent delegation table, category guide
+- **Phase 3: Execution** - Implementation patterns
+- **Phase 4: Verification** - Quality checks
+
+**Intent Gate** (Phase 0, `src/agents/sisyphus.ts:202`):
+
+```
+Surface Form → True Intent → Routing
+"explain X"    → Research    → explore/librarian → synthesize
+"implement X"  → Implementation → plan → delegate or execute
+"look into X"  → Investigation → explore → report
+"I'm seeing error" → Fix → diagnose → fix minimally
+```
+
+**Key Tools**: All tools available (no restrictions)
+
+**Best Models**:
+- **Claude Opus 4.6** - Optimal (prompt engineered for Claude)
+- **Kimi K2.5** - Excellent alternative (Claude-like behavior)
+- **GLM 5** - Solid via Z.ai
+
+<Warning>
+Sisyphus has Claude-optimized prompts. GPT models work but are not ideal. Use Hephaestus for GPT-5.3 codex.
+</Warning>
+
+### Hephaestus: The Autonomous Craftsman
+
+**File**: `src/agents/hephaestus.ts` (507 LOC)
+
+**Named With Irony**: Anthropic blocked OpenCode API access, so the team built a GPT-native autonomous agent.
+
+**Role**: Deep autonomous worker. Receives goals, not instructions. Explores codebase, researches patterns, executes end-to-end.
+
+**Default Model**: `gpt-5.3-codex` (variant: `medium`)
+
+**Fallback Chain**:
+```typescript
+[
+  { providers: ["openai", "venice", "opencode"], model: "gpt-5.3-codex", variant: "medium" },
+  { providers: ["github-copilot"], model: "gpt-5.2", variant: "medium" }
+]
+```
+
+**Required Provider**: `["openai", "github-copilot", "venice", "opencode"]` - Will not activate without one.
+
+**Prompt Structure** (GPT-optimized):
+- **Phase 0: Intent Gate** - Similar to Sisyphus but GPT-tuned
+- **Autonomous Execution Mindset** - Explicit instruction to explore first, act second
+- **No Hand-Holding** - Expects goals, figures out implementation independently
+
+**Why Hephaestus vs Vanilla Codex CLI**:
+1. **Multi-model orchestration**: Routes tasks to optimal models (GPT for deep reasoning, Gemini for frontend, Haiku for speed)
+2. **Background agents**: Parallel execution (5+ agents simultaneously)
+3. **Category system**: Intent-based routing, not manual model selection
+4. **Accumulated wisdom**: Subagents learn from previous results
+
+**Best Use Cases**:
+- Deep architectural reasoning
+- Complex debugging across many files
+- Cross-domain knowledge synthesis
+- Tasks requiring GPT-5.3 codex's reasoning depth
+
+**Activation**:
+Switch to Hephaestus in OpenCode UI, or invoke via:
+```typescript
+call_omo_agent(subagent_type="hephaestus", prompt="...")
+```
+
+### Oracle: The Strategic Consultant
+
+**File**: `src/agents/oracle.ts`
+
+**Role**: Read-only high-IQ consultant for architecture decisions and complex debugging.
+
+**Default Model**: `gpt-5.2` (variant: `high`)
+
+**Tool Restrictions**: **Denied**: `write`, `edit`, `task`, `call_omo_agent`
+
+**Fallback Chain**:
+```typescript
+[
+  { providers: ["openai", "github-copilot", "opencode"], model: "gpt-5.2", variant: "high" },
+  { providers: ["google", "github-copilot", "opencode"], model: "gemini-3.1-pro", variant: "high" },
+  { providers: ["anthropic", "github-copilot", "opencode"], model: "claude-opus-4-6", variant: "max" }
+]
+```
+
+**When to Use**:
+- Complex architecture design
+- After completing significant work (self-review)
+- 2+ failed fix attempts
+- Unfamiliar code patterns
+- Security/performance concerns
+- Multi-system tradeoffs
+
+**When to Avoid**:
+- Simple file operations (use direct tools)
+- First attempt at any fix (try yourself first)
+- Questions answerable from code you've read
+- Trivial decisions (variable names, formatting)
+
+**Decision Framework** (`src/agents/oracle.ts:50`):
+- **Bias toward simplicity**: Least complex solution
+- **Leverage existing code**: Favor modifications over new components
+- **One clear path**: Single primary recommendation
+- **Effort tags**: Quick ({`<`}1h), Short (1-4h), Medium (1-2d), Large (3d+)
+
+**Invocation**:
+```typescript
+call_omo_agent(
+  subagent_type="oracle",
+  prompt="I need architectural advice on [problem]. Context: [details]"
+)
+```
+
+### Librarian: The Documentation Searcher
+
+**File**: `src/agents/librarian.ts`
+
+**Role**: External documentation and OSS code search. Stays current on library APIs and best practices.
+
+**Default Model**: `gemini-3-flash`
+
+**Tool Restrictions**: **Denied**: `write`, `edit`, `task`, `call_omo_agent`
+
+**Fallback Chain**:
+```typescript
+[
+  { providers: ["google", "github-copilot", "opencode"], model: "gemini-3-flash" },
+  { providers: ["opencode"], model: "minimax-m2.5-free" },
+  { providers: ["opencode"], model: "big-pickle" }
+]
+```
+
+**When to Use**:
+- "How does X library work?"
+- "Find examples of Y pattern"
+- "What's the API for Z?"
+- Researching unfamiliar dependencies
+
+**Typical Workflow**:
+1. Sisyphus receives question about external library
+2. Delegates to Librarian: `call_omo_agent(subagent_type="librarian", run_in_background=true, ...)`
+3. Librarian searches docs, returns findings
+4. Sisyphus synthesizes answer
+
+### Explore: The Fast Grep Agent
+
+**File**: `src/agents/explore.ts`
+
+**Role**: Contextual codebase grep. Uses speed-focused models for pattern discovery.
+
+**Default Model**: `grok-code-fast-1` (GitHub Copilot)
+
+**Tool Restrictions**: **Denied**: `write`, `edit`, `task`, `call_omo_agent`
+
+**Fallback Chain**:
+```typescript
+[
+  { providers: ["github-copilot"], model: "grok-code-fast-1" },
+  { providers: ["opencode"], model: "minimax-m2.5-free" },
+  { providers: ["anthropic", "opencode"], model: "claude-haiku-4-5" },
+  { providers: ["opencode"], model: "gpt-5-nano" }
+]
+```
+
+**When to Use**:
+- "Where is X defined?"
+- "Find all usages of Y"
+- "How is Z pattern used in this codebase?"
+- Fast pattern discovery without full context
+
+**Optimized For**: Speed over depth. Uses cheapest/fastest models.
+
+### Multimodal-Looker: The Vision Agent
+
+**File**: `src/agents/multimodal-looker.ts`
+
+**Role**: PDF, image, and screenshot analysis.
+
+**Default Model**: `gemini-3-flash`
+
+**Tool Restrictions**: **Only allowed**: `read` (all other tools denied)
+
+**Fallback Chain** (6 deep):
+```typescript
+[
+  { providers: ["opencode"], model: "kimi-k2.5-free" },
+  { providers: ["google", "github-copilot", "opencode"], model: "gemini-3-flash" },
+  { providers: ["openai", "github-copilot", "opencode"], model: "gpt-5.2" },
+  { providers: ["zai-coding-plan"], model: "glm-4.6v" },
+  { providers: ["openai", "github-copilot", "opencode"], model: "gpt-5-nano" },
+  // + 1 more
+]
+```
+
+**When to Use**:
+- Analyzing screenshots
+- Extracting data from PDFs
+- Describing images
+- Visual debugging
+
+**Invocation** (via `look_at` tool):
+```typescript
+look_at(
+  file_path="/path/to/screenshot.png",
+  goal="Describe what you see in this error dialog"
+)
+```
+
+### Metis: The Gap Analyzer
+
+**File**: `src/agents/metis.ts`
+
+**Role**: Pre-planning consultant. Catches what Prometheus missed before plans are finalized.
+
+**Default Model**: `claude-opus-4-6` (variant: `max`)
+
+**Temperature**: **0.3** (only agent with elevated temperature for creative gap discovery)
+
+**Tool Restrictions**: None (read-only by design)
+
+**When to Use**: Invoked automatically by Prometheus during planning phase.
+
+**Prompt Focus**:
+- Identify missing requirements
+- Surface edge cases
+- Spot ambiguities
+- Challenge assumptions
+
+### Momus: The Ruthless Reviewer
+
+**File**: `src/agents/momus.ts`
+
+**Role**: Plan validation. Reviews plans against clarity, verification, and context criteria.
+
+**Default Model**: `gpt-5.2` (variant: `medium`)
+
+**Tool Restrictions**: **Denied**: `write`, `edit`, `task`
+
+**When to Use**: Invoked automatically after Prometheus generates a plan.
+
+**Validation Criteria**:
+1. **Clarity**: Are tasks unambiguous?
+2. **Verification**: Does each task have QA criteria?
+3. **Dependencies**: Is the dependency graph clear?
+4. **Parallelization**: Are parallel execution waves identified?
+5. **Category/Skills**: Are delegation recommendations present?
+
+### Atlas: The Todo Orchestrator
+
+**File**: `src/agents/atlas/agent.ts`
+
+**Role**: Executes Prometheus plans. Distributes tasks to specialized subagents, accumulates learnings, verifies completion.
+
+**Default Model**: `claude-sonnet-4-6`
+
+**Tool Restrictions**: **Denied**: `task`, `call_omo_agent` (uses TodoWrite/TaskCreate instead)
+
+**Fallback Chain**:
+```typescript
+[
+  { providers: ["opencode"], model: "kimi-k2.5-free" },
+  { providers: ["anthropic", "github-copilot", "opencode"], model: "claude-sonnet-4-6" },
+  { providers: ["openai", "github-copilot", "opencode"], model: "gpt-5.2" }
+]
+```
+
+**Model-Specific Prompts**:
+- GPT models → `src/agents/atlas/gpt.ts`
+- Gemini models → `src/agents/atlas/gemini.ts`
+- Default (Claude) → `src/agents/atlas/default.ts`
+
+**Activation**: Run `/start-work` after creating a Prometheus plan.
+
+**See Also**: [Orchestration Guide](/concepts/orchestration) for Atlas workflow.
+
+### Prometheus: The Strategic Planner
+
+**File**: `src/agents/prometheus/` (internal, not directly invocable)
+
+**Role**: Interview-based planning. Asks clarifying questions, identifies scope, builds detailed plans.
+
+**Default Model**: `claude-opus-4-6` (variant: `max`)
+
+**Activation**: Press **Tab** in OpenCode, or type `@plan "your task"` from Sisyphus.
+
+**Interview Mode** (`src/agents/prometheus/interview-mode.ts`):
+1. Launch explore/librarian in background for context
+2. Present user request summary
+3. List uncertainties and clarifying questions
+4. Iterate until 100% clarity
+5. Generate structured plan with dependency graph
+
+**Plan Output Requirements** (`src/tools/delegate-task/constants.ts:249`):
+1. **Task Dependency Graph**: Blockers and dependents for each task
+2. **Parallel Execution Graph**: Wave grouping for parallel dispatch
+3. **Category + Skills Recommendations**: For each task
+4. **Actionable TODO List**: Ready for TodoWrite/TaskCreate
+
+**See Also**: [Orchestration Guide](/concepts/orchestration) for Prometheus workflow.
+
+### Sisyphus-Junior: The Category Executor
+
+**File**: Variant of Sisyphus with simplified prompt
+
+**Role**: Category-spawned executor. Handles tasks delegated via `task(category="...")`.
+
+**Default Model**: `claude-sonnet-4-6`
+
+**When to Use**: Automatically spawned when delegating via categories (not explicit subagent types).
+
+**Example**:
+```typescript
+// Spawns Sisyphus-Junior with visual-engineering category prompt
+task(
+  category="visual-engineering",
+  load_skills=["playwright"],
+  prompt="Implement responsive navbar with mobile menu"
+)
+```
+
+## Tool Restrictions Summary
+
+| Agent | Denied Tools | Reason |
+|-------|--------------|--------|
+| Oracle | write, edit, task, call_omo_agent | Read-only consultant |
+| Librarian | write, edit, task, call_omo_agent | External search only |
+| Explore | write, edit, task, call_omo_agent | Fast grep, no mutations |
+| Multimodal-Looker | ALL except read | Vision analysis only |
+| Atlas | task, call_omo_agent | Uses TodoWrite/TaskCreate instead |
+| Momus | write, edit, task | Plan review only |
+
+**Implementation**: `src/shared/permission-compat.ts`
+
+```typescript
+export const AGENT_TOOL_RESTRICTIONS: Record<string, string[]> = {
+  oracle: ["write", "edit", "task", "call_omo_agent"],
+  librarian: ["write", "edit", "task", "call_omo_agent"],
+  explore: ["write", "edit", "task", "call_omo_agent"],
+  "multimodal-looker": ["*"], // All denied except read
+  atlas: ["task", "call_omo_agent"],
+  momus: ["write", "edit", "task"]
+}
+```
+
+## Model Resolution Pipeline
+
+**File**: `src/shared/model-requirements.ts`
+
+Each agent has a fallback chain with provider + model + optional variant:
+
+```typescript
+export const AGENT_MODEL_REQUIREMENTS: Record<string, ModelRequirement> = {
+  sisyphus: {
+    fallbackChain: [
+      { providers: ["anthropic", "github-copilot", "opencode"], model: "claude-opus-4-6", variant: "max" },
+      { providers: ["opencode"], model: "kimi-k2.5-free" },
+      // ...
+    ],
+    requiresAnyModel: true  // Must have at least one model available
+  },
+  hephaestus: {
+    fallbackChain: [ /* ... */ ],
+    requiresProvider: ["openai", "github-copilot", "venice", "opencode"]  // Must have provider
+  }
+}
+```
+
+**Resolution Steps** (`src/shared/model-resolution-pipeline.ts`):
+
+1. **Override**: User config `agents.sisyphus.model`
+2. **UI Selection**: For primary agents only
+3. **Fallback Chain**: Try each entry until available model found
+4. **System Default**: Ultimate fallback
+
+**Availability Check**:
+```typescript
+const availableModels = await fetchAvailableModels()
+const firstAvailable = fallbackChain.find(entry => 
+  entry.providers.some(p => connectedProviders.includes(p)) &&
+  availableModels.has(entry.model)
+)
+```
+
+## Agent Factory Pattern
+
+**File**: `src/agents/types.ts`
+
+All agents follow the factory pattern:
+
+```typescript
+type AgentFactory = (model: string, ...args) => AgentConfig
+
+const createOracleAgent: AgentFactory = (model: string) => ({
+  instructions: ORACLE_SYSTEM_PROMPT,
+  model,
+  temperature: 0.1,
+  tools: createAgentToolRestrictions(["write", "edit", "task", "call_omo_agent"])
+})
+
+createOracleAgent.mode = "subagent"  // Static property
+```
+
+**Registration** (`src/agents/builtin-agents.ts:32`):
+
+```typescript
+const agentSources: Record<BuiltinAgentName, AgentSource> = {
+  sisyphus: createSisyphusAgent,
+  hephaestus: createHephaestusAgent,
+  oracle: createOracleAgent,
+  librarian: createLibrarianAgent,
+  // ...
+}
+```
+
+**Dynamic Prompt Building**:
+
+Sisyphus, Hephaestus, and Atlas use dynamic prompt sections:
+
+```typescript
+// src/agents/dynamic-agent-prompt-builder.ts
+const keyTriggers = buildKeyTriggersSection(availableAgents)
+const delegation = buildDelegationTable(availableAgents)
+const categoryGuide = buildCategorySkillsDelegationGuide(availableCategories, availableSkills)
+
+const instructions = `
+${taskManagement}
+${keyTriggers}
+${delegation}
+${categoryGuide}
+// ...
+`
+```
+
+This allows agents to see available subagents, categories, and skills at runtime.
+
+## Custom Agents
+
+You can register custom agents via `custom_agent_summaries`:
+
+```jsonc
+{
+  "custom_agent_summaries": [
+    {
+      "name": "security-auditor",
+      "description": "Specialized in security vulnerability analysis and threat modeling"
+    }
+  ]
+}
+```
+
+Custom agents appear in Sisyphus's delegation table but must be configured separately (outside plugin scope).
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Orchestration" icon="diagram-project" href="/concepts/orchestration">
+    Learn how agents delegate to each other and the Intent Gate
+  </Card>
+  <Card title="Categories" icon="layer-group" href="/concepts/categories">
+    Explore the 8 task categories and model mapping
+  </Card>
+  <Card title="Configuration" icon="gear" href="/reference/configuration">
+    Customize agent models and fallback chains
+  </Card>
+  <Card title="Tools" icon="wrench" href="/reference/tools">
+    Complete catalog of 26 available tools
+  </Card>
+</CardGroup>

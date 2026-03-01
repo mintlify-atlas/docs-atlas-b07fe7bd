@@ -1,0 +1,416 @@
+---
+title: 'Ultrawork Mode'
+description: 'Maximum intensity execution with parallel agents and deep exploration'
+icon: 'bolt'
+---
+
+## What is Ultrawork Mode?
+
+Ultrawork mode (triggered by `ultrawork` or `ulw` keywords) activates maximum-intensity execution:
+
+- **Parallel agent spawning**: Fire 5+ background agents simultaneously
+- **Aggressive exploration**: Deep codebase analysis before action
+- **Relentless execution**: No premature stopping, tasks run to completion
+- **Smart delegation**: Automatic routing to specialist agents
+
+<Tip>
+Think of ultrawork as having 5 senior engineers working simultaneously instead of 1.
+</Tip>
+
+## When to Use Ultrawork
+
+### Perfect for:
+
+```
+ulw implement OAuth authentication with social providers
+ulw refactor the payment module to use the new API
+ulw fix all TypeScript errors and warnings
+```
+
+| Scenario | Why Ultrawork Helps |
+|----------|--------------------|
+| **Complex features** | Parallel research + implementation + testing |
+| **Large refactors** | Multiple agents work on different files |
+| **"Figure it out" tasks** | Agent explores patterns before deciding approach |
+| **Cross-cutting changes** | Simultaneous updates across many files |
+
+### Not needed for:
+
+- Simple typo fixes
+- Single-file changes
+- Quick documentation updates
+- Questions about the codebase
+
+## How to Activate
+
+<Steps>
+
+<Step title="Include the keyword">
+Add `ultrawork` or `ulw` anywhere in your prompt:
+
+```bash
+ulw build a REST API with rate limiting
+```
+
+or
+
+```bash
+Implement user authentication. Use ultrawork mode.
+```
+</Step>
+
+<Step title="Watch parallel execution">
+The agent will:
+1. Spawn multiple explore/librarian agents in background
+2. Research patterns while starting implementation
+3. Use findings from research to guide decisions
+</Step>
+
+<Step title="Track progress">
+See background agents complete:
+```
+[explore] Finding authentication patterns...
+[librarian] Searching OAuth documentation...
+[sisyphus] Starting implementation...
+```
+</Step>
+
+</Steps>
+
+## Model-Specific Behavior
+
+Ultrawork adapts its prompt based on the active model:
+
+<Tabs>
+<Tab title="Claude (Default)">
+
+**Optimized for Claude Opus/Sonnet:**
+
+- Aggressive parallel agent spawning (5-10 agents)
+- Heavy use of `task()` delegation
+- Background mode by default for all research
+- Detailed structured output
+
+```typescript
+// Claude ultrawork characteristics
+- Leverages Claude's instruction-following
+- Uses todo tracking extensively
+- Spawns agents preemptively
+```
+
+</Tab>
+
+<Tab title="GPT-5.2+">
+
+**Principle-driven execution:**
+
+- Goal-oriented autonomous work
+- Less hand-holding, more reasoning
+- Compact, principle-based instructions
+- Emphasis on architectural thinking
+
+```typescript
+// GPT ultrawork characteristics
+- Trusts model to figure out approach
+- Focuses on "why" over "how"
+- Leverages deep reasoning capabilities
+```
+
+</Tab>
+
+<Tab title="Gemini">
+
+**Visual and creative focus:**
+
+- Enhanced UI/UX awareness
+- Creative problem-solving emphasis
+- Multimodal context integration
+- Bold architectural decisions
+
+```typescript
+// Gemini ultrawork characteristics
+- Optimized for frontend work
+- Emphasizes aesthetic choices
+- Creative solution generation
+```
+
+</Tab>
+
+<Tab title="Prometheus (Planner)">
+
+**Strategic planning mode:**
+
+- Focuses on comprehensive planning
+- Interview-style requirement gathering
+- Leverages deep/quick categories heavily
+- Always delegates in parallel
+
+<Note>
+Prometheus automatically uses its own ultrawork variant focused on thorough planning.
+</Note>
+
+</Tab>
+</Tabs>
+
+## Ultrawork vs Regular Mode
+
+| Aspect | Regular Mode | Ultrawork Mode |
+|--------|--------------|----------------|
+| **Agent spawning** | On-demand, conservative | Aggressive, preemptive |
+| **Parallelism** | Sequential where possible | Parallel by default |
+| **Research** | As needed | Deep upfront exploration |
+| **Delegation** | Careful consideration | Automatic to specialists |
+| **Stopping** | May pause for clarification | Relentless until complete |
+| **Cost** | Lower API usage | Higher (more parallel agents) |
+
+## Configuration
+
+You can configure per-agent ultrawork behavior:
+
+```json
+{
+  "agents": {
+    "sisyphus": {
+      "model": "anthropic/claude-sonnet-4-6",
+      "ultrawork": {
+        "model": "anthropic/claude-opus-4-6",
+        "variant": "max"
+      }
+    },
+    "prometheus": {
+      "prompt_append": "Leverage deep & quick agents heavily, always in parallel."
+    }
+  }
+}
+```
+
+### Ultrawork Override Fields
+
+| Field | Description |
+|-------|-------------|
+| `model` | Switch to more powerful model in ultrawork |
+| `variant` | Use higher reasoning effort (`max`, `xhigh`) |
+
+<Warning>
+Ultrawork mode increases API costs significantly due to parallel agent execution. Use for complex tasks where the speed and thoroughness justify the cost.
+</Warning>
+
+## Behind the Scenes
+
+### Keyword Detection
+
+The `keyword-detector` hook scans your first message:
+
+```typescript
+// Pattern matching
+Pattern: /\b(ultrawork|ulw)\b/i
+
+// Triggers injection of mode-specific prompt
+getUltraworkMessage(agentName, modelID)
+```
+
+### Dynamic Prompt Injection
+
+Ultrawork adds instructions to the system prompt:
+
+<CodeGroup>
+```typescript Claude
+// Emphasis on structured delegation
+- Fire background agents IMMEDIATELY
+- Use task() for all research
+- Never wait for sequential completion
+- TodoWrite for tracking
+```
+
+```typescript GPT
+// Principle-based guidance
+- Goal: Complete task autonomously
+- Strategy: Research → Plan → Execute
+- Delegation: When specialist needed
+- Verification: Always validate
+```
+</CodeGroup>
+
+## Real-World Examples
+
+### Example 1: Complex Feature
+
+**Prompt:**
+```
+ulw implement user authentication with OAuth, JWT, and session management
+```
+
+**What happens:**
+
+<Steps>
+<Step title="Immediate spawning">
+```bash
+[explore] Finding auth patterns in codebase...
+[librarian] Searching OAuth 2.0 specs...
+[librarian] Finding JWT best practices...
+[explore] Analyzing session storage patterns...
+```
+</Step>
+
+<Step title="Parallel work">
+While agents research:
+- Sisyphus starts scaffold (models, routes, middleware)
+- Incorporates findings as they arrive
+- Adjusts approach based on discovered patterns
+</Step>
+
+<Step title="Integration">
+- Combines all research findings
+- Implements comprehensive solution
+- Adds tests based on discovered patterns
+</Step>
+</Steps>
+
+### Example 2: Large Refactor
+
+**Prompt:**
+```
+ulw refactor the API layer to use TypeScript strict mode
+```
+
+**What happens:**
+
+1. **Discovery** (parallel):
+   - Map all API files
+   - Find type usage patterns
+   - Identify migration hotspots
+
+2. **Execution** (parallel):
+   - Update types in batches
+   - Fix errors by file group
+   - Verify with LSP diagnostics
+
+3. **Verification**:
+   - Run tests after each batch
+   - Ensure no runtime breaks
+
+## Tips for Best Results
+
+<Tip>
+**Be specific about the end goal, but let ultrawork figure out the approach:**
+
+✅ Good: `ulw implement rate limiting for all API routes`  
+❌ Too vague: `ulw make the API better`  
+❌ Too detailed: `ulw create a RateLimiter class in src/middleware/rate-limiter.ts with...`
+</Tip>
+
+### Optimal Prompts
+
+```bash
+# Clear goal + trust the agent
+ulw add comprehensive error handling to the user service
+
+# Scope + success criteria
+ulw refactor auth to use the new provider system. Must be backwards compatible.
+
+# Complex multi-part task
+ulw implement search with filters, pagination, and sorting
+```
+
+## Combining with Other Features
+
+### Ultrawork + Prometheus Planning
+
+```bash
+# Step 1: Plan with Prometheus
+@plan "Build admin dashboard with charts and user management"
+
+# Step 2: Execute with ultrawork
+/start-work
+```
+
+Atlas reads the plan and uses ultrawork-style delegation automatically.
+
+### Ultrawork + Ralph Loop
+
+```bash
+/ralph-loop "ulw implement and test the payment integration"
+```
+
+Combines ultrawork intensity with Ralph's persistence.
+
+### Ultrawork + Skills
+
+```bash
+ulw implement the checkout flow. Load skills: ["frontend-ui-ux", "playwright"]
+```
+
+Maximum intensity + domain expertise.
+
+## Monitoring and Control
+
+### Track Active Agents
+
+With tmux enabled:
+
+```json
+{
+  "tmux": {
+    "enabled": true,
+    "layout": "main-vertical"
+  }
+}
+```
+
+See all background agents in separate panes.
+
+### Limit Concurrency
+
+```json
+{
+  "background_task": {
+    "providerConcurrency": {
+      "anthropic": 3,
+      "openai": 3
+    }
+  }
+}
+```
+
+## Common Questions
+
+<AccordionGroup>
+<Accordion title="Does ultrawork cost more?">
+Yes. Parallel agents mean more API calls. A single ultrawork task might use 3-10x the tokens of regular mode. Use for complex tasks where speed and thoroughness justify the cost.
+</Accordion>
+
+<Accordion title="Can I use ultrawork with any agent?">
+Ultrawork works best with Sisyphus (default) and Hephaestus. Prometheus has its own planning-focused variant. Specialist agents (Oracle, Librarian, Explore) don't need ultrawork since they're already focused.
+</Accordion>
+
+<Accordion title="How do I stop ultrawork mid-execution?">
+```bash
+/stop-continuation
+```
+This stops all continuation mechanisms including ultrawork delegation.
+</Accordion>
+
+<Accordion title="Can I make ultrawork the default?">
+No, ultrawork is intentionally opt-in due to cost. Add the keyword when needed.
+</Accordion>
+</AccordionGroup>
+
+## Related
+
+<CardGroup cols={2}>
+<Card title="Background Agents" icon="layer-group" href="/guides/background-agents">
+Learn about parallel agent execution
+</Card>
+
+<Card title="Prometheus Planning" icon="map" href="/guides/prometheus-planning">
+Strategic planning before execution
+</Card>
+
+<Card title="Agent Model Matching" icon="microchip" href="/guides/agent-model-matching">
+Which models work best for each agent
+</Card>
+
+<Card title="Commands" icon="terminal" href="/guides/commands">
+Slash commands for workflows
+</Card>
+</CardGroup>

@@ -1,0 +1,436 @@
+---
+title: Category Configuration
+description: Domain-specific model delegation with thinking budgets, tool restrictions, and custom categories
+---
+
+## What Are Categories?
+
+Categories enable **domain-specific model delegation**. When Sisyphus delegates work via the `task()` tool, it selects a **category** (not a model name directly).
+
+This allows:
+- Specialized models for different task types
+- Centralized model configuration
+- Automatic model selection based on task domain
+- Cost optimization (cheap models for simple tasks, powerful models for complex work)
+
+## Built-in Categories
+
+oh-my-opencode provides 8 built-in categories:
+
+| Category | Default Model | Variant | Purpose |
+|----------|---------------|---------|----------|
+| **visual-engineering** | `google/gemini-3-pro` | high | Frontend, UI/UX, design, animation |
+| **ultrabrain** | `openai/gpt-5.3-codex` | xhigh | Deep logical reasoning, complex architecture |
+| **deep** | `openai/gpt-5.3-codex` | medium | Autonomous problem-solving, thorough research |
+| **artistry** | `google/gemini-3-pro` | high | Creative/unconventional approaches |
+| **quick** | `anthropic/claude-haiku-4-5` | — | Trivial tasks, typo fixes, single-file changes |
+| **unspecified-low** | `anthropic/claude-sonnet-4-6` | — | General tasks, low effort |
+| **unspecified-high** | `anthropic/claude-opus-4-6` | max | General tasks, high effort |
+| **writing** | `kimi-for-coding/k2p5` | — | Documentation, prose, technical writing |
+
+<Note>
+  Built-in defaults only apply if the category is present in your config. Otherwise the system default model is used.
+</Note>
+
+## Basic Configuration
+
+Configure categories under the `categories` key:
+
+```jsonc
+{
+  "categories": {
+    "quick": { "model": "opencode/gpt-5-nano" },
+    "writing": { "model": "kimi-for-coding/k2p5" },
+    "visual-engineering": { 
+      "model": "google/gemini-3-pro", 
+      "variant": "high" 
+    }
+  }
+}
+```
+
+## Category Options
+
+All categories support these configuration options:
+
+### Model Selection
+
+<ParamField path="model" type="string">
+  Model override in `provider/model` format.
+  
+  ```jsonc
+  "quick": { "model": "opencode/gpt-5-nano" }
+  ```
+</ParamField>
+
+<ParamField path="variant" type="enum">
+  Model variant for thinking budget. Options: `max`, `xhigh`, `high`, `medium`, `low`
+  
+  ```jsonc
+  "ultrabrain": { 
+    "model": "openai/gpt-5.3-codex",
+    "variant": "xhigh" 
+  }
+  ```
+</ParamField>
+
+<ParamField path="fallback_models" type="string | string[]">
+  Fallback models on API errors. Used with `runtime_fallback`.
+  
+  ```jsonc
+  "deep": {
+    "model": "openai/gpt-5.3-codex",
+    "fallback_models": ["anthropic/claude-opus-4-6", "google/gemini-3-pro"]
+  }
+  ```
+</ParamField>
+
+### Sampling Parameters
+
+<ParamField path="temperature" type="number" default="0.1">
+  Sampling temperature (0.0–2.0). Higher = more creative.
+  
+  ```jsonc
+  "artistry": { "temperature": 0.7 }
+  ```
+</ParamField>
+
+<ParamField path="top_p" type="number">
+  Top-p sampling (0.0–1.0). Alternative to temperature.
+  
+  ```jsonc
+  "writing": { "top_p": 0.95 }
+  ```
+</ParamField>
+
+### Response Control
+
+<ParamField path="maxTokens" type="number">
+  Maximum tokens for response.
+  
+  ```jsonc
+  "deep": { "maxTokens": 8000 }
+  ```
+</ParamField>
+
+<ParamField path="textVerbosity" type="enum">
+  Text verbosity level: `low`, `medium`, `high`
+  
+  ```jsonc
+  "quick": { "textVerbosity": "low" }
+  ```
+</ParamField>
+
+### Thinking Configuration
+
+<ParamField path="thinking" type="object">
+  Anthropic extended thinking configuration.
+  
+  ```jsonc
+  "ultrabrain": {
+    "thinking": { 
+      "type": "enabled", 
+      "budgetTokens": 300000 
+    }
+  }
+  ```
+  
+  **Fields:**
+  - `type`: `"enabled"` or `"disabled"`
+  - `budgetTokens`: Maximum thinking tokens (optional)
+</ParamField>
+
+<ParamField path="reasoningEffort" type="enum">
+  OpenAI reasoning effort: `low`, `medium`, `high`, `xhigh`
+  
+  ```jsonc
+  "ultrabrain": { "reasoningEffort": "xhigh" }
+  ```
+</ParamField>
+
+### Tool Restrictions
+
+<ParamField path="tools" type="object">
+  Allowed tools for this category.
+  
+  ```jsonc
+  "quick": {
+    "tools": {
+      "read": true,
+      "edit": true,
+      "write": true,
+      "bash": false,
+      "task": false
+    }
+  }
+  ```
+</ParamField>
+
+### Prompt Customization
+
+<ParamField path="prompt_append" type="string">
+  Text to append to the category's system prompt.
+  
+  ```jsonc
+  "writing": {
+    "prompt_append": "Focus on clarity, conciseness, and technical accuracy."
+  }
+  ```
+</ParamField>
+
+<ParamField path="description" type="string">
+  Human-readable description shown in `task()` tool prompt.
+  
+  ```jsonc
+  "git": {
+    "description": "All git operations and version control tasks"
+  }
+  ```
+</ParamField>
+
+### Stability Control
+
+<ParamField path="is_unstable_agent" type="boolean" default={false}>
+  Force background mode for monitoring. Auto-enabled for Gemini/MiniMax models.
+  
+  ```jsonc
+  "visual-engineering": {
+    "is_unstable_agent": true
+  }
+  ```
+</ParamField>
+
+<ParamField path="disable" type="boolean" default={false}>
+  Disable this category. Disabled categories are excluded from task delegation.
+  
+  ```jsonc
+  "ultrabrain": { "disable": true }
+  ```
+</ParamField>
+
+## Custom Categories
+
+Create custom categories for specific domains:
+
+```jsonc
+{
+  "categories": {
+    // Custom category for git operations
+    "git": {
+      "model": "opencode/gpt-5-nano",
+      "description": "All git operations and version control tasks",
+      "prompt_append": "Focus on atomic commits, clear messages, and safe operations.",
+      "tools": {
+        "bash": true,
+        "read": true,
+        "write": false
+      }
+    },
+
+    // Custom category for database work
+    "database": {
+      "model": "openai/gpt-5.2",
+      "variant": "medium",
+      "description": "Database design, migrations, and query optimization",
+      "prompt_append": "Prioritize data integrity, performance, and maintainability."
+    },
+
+    // Custom category for security reviews
+    "security": {
+      "model": "anthropic/claude-opus-4-6",
+      "variant": "high",
+      "description": "Security audits, vulnerability scanning, and threat modeling",
+      "thinking": {
+        "type": "enabled",
+        "budgetTokens": 200000
+      }
+    }
+  }
+}
+```
+
+## Model Variants
+
+Variants control the **thinking budget** for models:
+
+| Variant | Anthropic Budget | OpenAI Reasoning | Use Case |
+|---------|------------------|------------------|----------|
+| `max` | ~500k tokens | — | Most complex reasoning |
+| `xhigh` | ~300k tokens | xhigh | Deep architectural work |
+| `high` | ~200k tokens | high | Complex problem-solving |
+| `medium` | ~100k tokens | medium | Standard tasks |
+| `low` | ~50k tokens | low | Simple, quick tasks |
+
+```jsonc
+{
+  "categories": {
+    "ultrabrain": {
+      "model": "anthropic/claude-opus-4-6",
+      "variant": "max"  // Maximum thinking budget
+    },
+    "quick": {
+      "model": "anthropic/claude-haiku-4-5",
+      "variant": "low"  // Minimal thinking budget
+    }
+  }
+}
+```
+
+## Thinking Budgets
+
+Control extended thinking for deep reasoning:
+
+### Anthropic Extended Thinking
+
+```jsonc
+{
+  "categories": {
+    "ultrabrain": {
+      "model": "anthropic/claude-opus-4-6",
+      "thinking": {
+        "type": "enabled",
+        "budgetTokens": 300000
+      }
+    }
+  }
+}
+```
+
+### OpenAI Reasoning Effort
+
+```jsonc
+{
+  "categories": {
+    "deep": {
+      "model": "openai/gpt-5.3-codex",
+      "reasoningEffort": "xhigh"
+    }
+  }
+}
+```
+
+## Disabling Categories
+
+Two ways to disable categories:
+
+**Method 1: Per-category `disable`**
+```jsonc
+{
+  "categories": {
+    "ultrabrain": { "disable": true }
+  }
+}
+```
+
+**Method 2: Global `disabled_categories` array**
+```jsonc
+{
+  "disabled_categories": ["ultrabrain", "artistry"]
+}
+```
+
+## Provider Fallback Chains
+
+Each category has a default provider fallback chain:
+
+| Category | Provider Priority |
+|----------|-------------------|
+| visual-engineering | google → zai-coding-plan → anthropic → kimi-for-coding |
+| ultrabrain | openai → google → anthropic (via github-copilot/opencode) |
+| deep | openai → anthropic → google (via github-copilot/opencode) |
+| artistry | google → anthropic → openai (via github-copilot/opencode) |
+| quick | anthropic → google → opencode (via github-copilot/opencode) |
+| unspecified-low | anthropic → openai → google (via github-copilot/opencode) |
+| unspecified-high | anthropic → openai → google (via github-copilot/opencode) |
+| writing | kimi-for-coding → google → anthropic |
+
+Check effective resolution:
+```bash
+bunx oh-my-opencode doctor --verbose
+```
+
+## Complete Example
+
+A comprehensive category configuration:
+
+```jsonc
+{
+  "categories": {
+    // Quick tasks - cheap model
+    "quick": {
+      "model": "opencode/gpt-5-nano",
+      "textVerbosity": "low",
+      "maxTokens": 2000,
+      "description": "Trivial tasks and quick fixes"
+    },
+
+    // Visual work - Gemini excels
+    "visual-engineering": {
+      "model": "google/gemini-3-pro",
+      "variant": "high",
+      "temperature": 0.3,
+      "description": "Frontend, UI/UX, design systems",
+      "is_unstable_agent": true  // Force background monitoring
+    },
+
+    // Deep reasoning - max thinking
+    "ultrabrain": {
+      "model": "anthropic/claude-opus-4-6",
+      "variant": "max",
+      "thinking": {
+        "type": "enabled",
+        "budgetTokens": 500000
+      },
+      "fallback_models": ["openai/gpt-5.3-codex", "google/gemini-3-pro"],
+      "description": "Complex architecture and deep reasoning"
+    },
+
+    // Writing - balanced model
+    "writing": {
+      "model": "kimi-for-coding/k2p5",
+      "temperature": 0.5,
+      "prompt_append": "Focus on clarity, technical accuracy, and reader engagement.",
+      "description": "Documentation and technical writing"
+    },
+
+    // Custom: Git operations
+    "git": {
+      "model": "opencode/gpt-5-nano",
+      "description": "Version control and git operations",
+      "prompt_append": "Prioritize atomic commits and clear commit messages.",
+      "tools": {
+        "bash": true,
+        "read": true,
+        "write": false,
+        "edit": false
+      }
+    },
+
+    // Custom: Database work
+    "database": {
+      "model": "openai/gpt-5.2",
+      "variant": "medium",
+      "reasoningEffort": "high",
+      "description": "Database design and optimization",
+      "thinking": {
+        "type": "enabled",
+        "budgetTokens": 150000
+      }
+    }
+  },
+
+  // Disable expensive category
+  "disabled_categories": ["artistry"]
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Agent Configuration" icon="robot" href="/configuration/agents">
+    Configure individual agents
+  </Card>
+  <Card title="Background Tasks" icon="list-check" href="/configuration/advanced#background-tasks">
+    Control parallel execution and concurrency
+  </Card>
+</CardGroup>

@@ -1,0 +1,470 @@
+---
+title: Tmux Integration
+description: State-first tmux pane management for background agent sessions with grid planning and interactive layouts
+---
+
+Oh My OpenCode provides seamless tmux integration for managing background agent sessions in separate panes. The system uses a state-first architecture with automatic pane lifecycle management.
+
+## Architecture
+
+The tmux integration follows a query-decide-execute-update pattern:
+
+<Steps>
+  <Step title="QUERY">
+    Get actual tmux pane state (source of truth)
+  </Step>
+  <Step title="DECIDE">
+    Pure function determines actions based on state
+  </Step>
+  <Step title="EXECUTE">
+    Execute actions with verification
+  </Step>
+  <Step title="UPDATE">
+    Update internal cache only after tmux confirms success
+  </Step>
+</Steps>
+
+**Source:** `src/features/tmux-subagent/manager.ts:42`
+
+```typescript
+/**
+ * State-first Tmux Session Manager
+ * 
+ * Architecture:
+ * 1. QUERY: Get actual tmux pane state (source of truth)
+ * 2. DECIDE: Pure function determines actions based on state
+ * 3. EXECUTE: Execute actions with verification
+ * 4. UPDATE: Update internal cache only after tmux confirms success
+ * 
+ * The internal `sessions` Map is just a cache for sessionId<->paneId mapping.
+ * The REAL source of truth is always queried from tmux.
+ */
+export class TmuxSessionManager {
+  // ...
+}
+```
+
+## Core Components
+
+### TmuxSessionManager
+
+**Source:** `src/features/tmux-subagent/manager.ts:54`
+
+Main class managing session-to-pane mapping and lifecycle.
+
+```typescript
+export class TmuxSessionManager {
+  // Session tracking
+  private sessions = new Map<string, TrackedSession>()
+  private pendingSessions = new Set<string>()
+  
+  // Deferred session queue (when at capacity)
+  private deferredSessions = new Map<string, DeferredSession>()
+  private deferredQueue: string[] = []
+
+  // Create pane for session
+  async handleSessionCreated(event: SessionCreatedEvent): Promise<void>
+  
+  // Close pane when session ends
+  async handleSessionDeleted(sessionId: string): Promise<void>
+  
+  // Check if tmux is enabled
+  private isEnabled(): boolean
+}
+```
+
+**Configuration:**
+```typescript
+interface TmuxConfig {
+  enabled: boolean
+  layout: "vertical" | "horizontal" | "grid"
+  main_pane_size: number      // Percentage (e.g., 60)
+  main_pane_min_width: number // Characters (default: 100)
+  agent_pane_min_width: number // Characters (default: 52)
+}
+```
+
+### DecisionEngine
+
+**Source:** `src/features/tmux-subagent/decision-engine.ts`
+
+Pure function evaluating window state to produce spawn/close actions.
+
+```typescript
+export function decideSpawnActions(
+  windowState: WindowState,
+  sessionMappings: SessionMapping[],
+  capacityConfig: CapacityConfig
+): SpawnDecision
+
+export function decideCloseAction(
+  sessionId: string,
+  sessionMappings: SessionMapping[]
+): CloseAction | null
+```
+
+**SpawnDecision:**
+```typescript
+type SpawnDecision = 
+  | { type: "spawn"; targetPaneId: string }
+  | { type: "replace"; targetPaneId: string; victimSessionId: string }
+  | { type: "defer"; reason: string }
+  | { type: "skip"; reason: string }
+```
+
+### ActionExecutor
+
+**Source:** `src/features/tmux-subagent/action-executor.ts`
+
+Executes spawn/close/replace actions with verification.
+
+```typescript
+export async function executeActions(
+  actions: PaneAction[],
+  serverUrl: string,
+  client: OpencodeClient
+): Promise<ExecutionResult[]>
+
+export async function executeAction(
+  action: PaneAction,
+  serverUrl: string,
+  client: OpencodeClient
+): Promise<ExecutionResult>
+```
+
+**PaneAction types:**
+```typescript
+type PaneAction =
+  | { type: "spawn"; sessionId: string; title: string; targetPaneId: string }
+  | { type: "close"; paneId: string }
+  | { type: "replace"; sessionId: string; title: string; targetPaneId: string; victimSessionId: string }
+```
+
+### GridPlanning
+
+**Source:** `src/features/tmux-subagent/grid-planning.ts`
+
+Calculates pane layout given window dimensions.
+
+```typescript
+export function calculateCapacity(
+  windowState: WindowState,
+  capacityConfig: CapacityConfig
+): {
+  canSplit: boolean
+  reason?: string
+  availableSpace?: { width: number; height: number }
+}
+```
+
+**Layout constraints:**
+- `MIN_PANE_WIDTH`: 52 characters
+- `MIN_PANE_HEIGHT`: 11 lines
+- Main pane preserved (never split below minimum)
+- Agent panes split from remaining space
+
+## Layout Options
+
+### Vertical Layout (Default)
+
+```
+┌─────────────┬────────┐
+│             │ Agent 1│
+│    Main     ├────────┤
+│    Pane     │ Agent 2│
+│             ├────────┤
+│             │ Agent 3│
+└─────────────┴────────┘
+```
+
+**Config:**
+```jsonc
+{
+  "tmux": {
+    "layout": "vertical",
+    "main_pane_size": 60  // 60% width for main pane
+  }
+}
+```
+
+### Horizontal Layout
+
+```
+┌──────────────────────┐
+│      Main Pane       │
+├──────────────────────┤
+│ Agent 1 │ Agent 2    │
+└──────────────────────┘
+```
+
+**Config:**
+```jsonc
+{
+  "tmux": {
+    "layout": "horizontal",
+    "main_pane_size": 50  // 50% height for main pane
+  }
+}
+```
+
+### Grid Layout
+
+```
+┌─────────┬─────┬─────┐
+│         │ Ag1 │ Ag2 │
+│  Main   ├─────┼─────┤
+│         │ Ag3 │ Ag4 │
+└─────────┴─────┴─────┘
+```
+
+**Config:**
+```jsonc
+{
+  "tmux": {
+    "layout": "grid",
+    "main_pane_size": 55,
+    "agent_pane_min_width": 52
+  }
+}
+```
+
+## Session Lifecycle
+
+### Session Created
+
+**Source:** `src/features/tmux-subagent/session-created-handler.ts`
+
+<Steps>
+  <Step title="Event Received">
+    `session.created` event with sessionId, parentID, title
+  </Step>
+  <Step title="Decision">
+    DecisionEngine evaluates: spawn, replace, defer, or skip
+  </Step>
+  <Step title="Spawn Pane">
+    Split from target pane, start OpenCode client in new pane
+  </Step>
+  <Step title="Track Session">
+    Add to `sessions` Map with sessionId → paneId mapping
+  </Step>
+  <Step title="Start Polling">
+    PollingManager monitors pane health
+  </Step>
+</Steps>
+
+```typescript
+// src/features/tmux-subagent/session-created-handler.ts
+await tmuxManager.handleSessionCreated({
+  type: "session.created",
+  properties: {
+    info: {
+      id: "session-123",
+      parentID: "parent-456",
+      title: "Task: Build feature"
+    }
+  }
+})
+```
+
+### Session Deleted
+
+**Source:** `src/features/tmux-subagent/session-deleted-handler.ts`
+
+<Steps>
+  <Step title="Event Received">
+    `session.deleted` event with sessionId
+  </Step>
+  <Step title="Find Pane">
+    Lookup paneId from `sessions` Map
+  </Step>
+  <Step title="Close Pane">
+    Execute `tmux kill-pane -t <pane-id>`
+  </Step>
+  <Step title="Untrack Session">
+    Remove from `sessions` Map
+  </Step>
+  <Step title="Stop Polling">
+    PollingManager stops monitoring
+  </Step>
+</Steps>
+
+## Pane Management
+
+### Spawn Action
+
+**When:** New background session, pane capacity available
+
+```bash
+# Executed command
+tmux split-window -t <target-pane-id> -h \
+  "cd <working-dir> && opencode-url <server-url> <session-id>"
+```
+
+### Replace Action
+
+**When:** New background session, no pane capacity (at limit)
+
+<Steps>
+  <Step title="Select Victim">
+    Oldest agent pane (by creation time)
+  </Step>
+  <Step title="Close Victim">
+    Terminate old session's pane
+  </Step>
+  <Step title="Spawn New">
+    Create pane for new session
+  </Step>
+</Steps>
+
+**Source:** `src/features/tmux-subagent/oldest-agent-pane.ts`
+
+### Defer Action
+
+**When:** Temporary capacity constraint (window too small)
+
+<Steps>
+  <Step title="Queue Session">
+    Add to `deferredQueue` (max 20)
+  </Step>
+  <Step title="Start Loop">
+    Poll every 5s for capacity availability
+  </Step>
+  <Step title="Retry Spawn">
+    Attempt spawn when capacity returns
+  </Step>
+  <Step title="TTL Check">
+    Drop from queue after 5 minutes
+  </Step>
+</Steps>
+
+**Constants:**
+```typescript
+const DEFERRED_SESSION_TTL_MS = 5 * 60 * 1000  // 5 minutes
+const MAX_DEFERRED_QUEUE_SIZE = 20
+```
+
+## Polling
+
+**Source:** `src/features/tmux-subagent/polling-manager.ts`
+
+Monitors pane health and auto-cleans dead sessions.
+
+```typescript
+export class TmuxPollingManager {
+  private pollingInterval?: ReturnType<typeof setInterval>
+  
+  startPolling(): void {
+    this.pollingInterval = setInterval(
+      () => this.pollAllSessions(),
+      POLL_INTERVAL_BACKGROUND_MS  // 3000ms
+    )
+  }
+  
+  private async pollAllSessions(): Promise<void> {
+    // Check each tracked session's pane still exists
+    // If pane missing → close session
+  }
+}
+```
+
+**Polling intervals:**
+```typescript
+const POLL_INTERVAL_BACKGROUND_MS = 3000        // 3s background health check
+const SESSION_READY_POLL_INTERVAL_MS = 100      // 100ms session ready wait
+const SESSION_READY_TIMEOUT_MS = 10000          // 10s session ready timeout
+```
+
+## Configuration
+
+### Enable Tmux Integration
+
+```jsonc
+{
+  "tmux": {
+    "enabled": true,
+    "layout": "vertical",
+    "main_pane_size": 60,
+    "main_pane_min_width": 100,
+    "agent_pane_min_width": 52
+  }
+}
+```
+
+### Disable Tmux Integration
+
+```jsonc
+{
+  "tmux": {
+    "enabled": false
+  }
+}
+```
+
+**Note:** Auto-disables if not inside tmux (`$TMUX` unset)
+
+## Interactive Sessions
+
+**Source:** `src/hooks/interactive-bash-session/`
+
+Hook integrates tmux with interactive tools (e.g., vim, htop).
+
+```typescript
+// Detects interactive tool usage
+if (toolName === "Bash" && isInteractiveCommand(args.command)) {
+  // Spawn in dedicated tmux pane
+  await tmuxManager.spawnInteractiveSession(sessionId, command)
+}
+```
+
+## Source Files
+
+**Location:** `src/features/tmux-subagent/` (27 files, ~3.6k LOC)
+
+<AccordionGroup>
+  <Accordion title="Core Files (9)">
+    - `manager.ts` - TmuxSessionManager main class
+    - `decision-engine.ts` - Spawn/close decision logic
+    - `action-executor.ts` - Execute pane actions
+    - `grid-planning.ts` - Layout capacity calculation
+    - `spawn-action-decider.ts` - Decide spawn vs replace vs defer
+    - `spawn-target-finder.ts` - Find best pane to split
+    - `oldest-agent-pane.ts` - LRU victim selection
+    - `polling-manager.ts` - Health polling
+    - `types.ts` - Type definitions
+  </Accordion>
+  <Accordion title="State Management (5)">
+    - `pane-state-querier.ts` - Query tmux pane state
+    - `session-status-parser.ts` - Parse session status
+    - `session-ready-waiter.ts` - Wait for session ready
+    - `session-message-count.ts` - Track message count
+    - `pane-split-availability.ts` - Check split capacity
+  </Accordion>
+  <Accordion title="Event Handlers (3)">
+    - `session-created-handler.ts` - Handle session.created
+    - `session-deleted-handler.ts` - Handle session.deleted
+    - `session-created-event.ts` - Event type definitions
+  </Accordion>
+  <Accordion title="Constants & Config (3)">
+    - `tmux-grid-constants.ts` - MIN_PANE_WIDTH, MIN_PANE_HEIGHT
+    - `polling-constants.ts` - Polling intervals
+    - `layout-config.test.ts` - Layout config tests
+  </Accordion>
+  <Accordion title="Cleanup & Utilities (7)">
+    - `cleanup.ts` - Session cleanup logic
+    - `event-handlers.ts` - Event routing
+    - `index.ts` - Barrel exports
+    - `action-executor-core.ts` - Core action execution
+    - Various test files
+  </Accordion>
+</AccordionGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Background Agent" href="/api/features/background-agent">
+    Background task system that uses tmux panes
+  </Card>
+  <Card title="Hooks" href="/api/features/hooks">
+    interactive-bash-session hook for tmux integration
+  </Card>
+</CardGroup>

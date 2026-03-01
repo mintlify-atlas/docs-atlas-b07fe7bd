@@ -1,0 +1,513 @@
+---
+title: "Creating Custom Agents"
+description: "Build custom agents with the agent builder pattern, configure capabilities, and integrate them into the orchestration system"
+---
+
+Agents are specialized AI configurations with custom prompts, tool restrictions, and model requirements. Oh My OpenCode includes 11 built-in agents following the factory pattern.
+
+## Agent Factory Pattern
+
+All agents follow the `createXXXAgent(model) → AgentConfig` pattern:
+
+```typescript
+import type { AgentConfig } from "@opencode-ai/sdk"
+import type { AgentMode } from "./types"
+
+const MODE: AgentMode = "subagent"
+
+export function createOracleAgent(model: string): AgentConfig {
+  return {
+    description: "Read-only consultation agent for debugging and architecture",
+    mode: MODE,
+    model,
+    temperature: 0.1,
+    prompt: ORACLE_SYSTEM_PROMPT,
+    permission: {
+      write: "deny",
+      edit: "deny",
+      task: "deny"
+    },
+    thinking: { type: "enabled", budgetTokens: 32000 }
+  }
+}
+createOracleAgent.mode = MODE
+```
+
+**Source**: `src/agents/oracle.ts:145`
+
+## AgentConfig Schema
+
+```typescript
+interface AgentConfig {
+  description: string              // Agent purpose (shown in UI)
+  mode: AgentMode                  // "primary" | "subagent" | "all"
+  model: string                    // Model ID
+  temperature?: number             // 0.0-1.0, default 0.1
+  maxTokens?: number               // Output token limit
+  prompt: string                   // System prompt
+  permission?: PermissionConfig    // Tool restrictions
+  thinking?: ThinkingConfig        // Extended thinking settings
+  reasoningEffort?: "low" | "medium" | "high" | "max" // GPT-specific
+  color?: string                   // UI color (hex)
+  category?: string                // Category for model resolution
+  skills?: string[]                // Auto-loaded skills
+  variant?: string                 // Model variant (extended, etc.)
+}
+
+type AgentMode = "primary" | "subagent" | "all"
+```
+
+### Agent Modes
+
+| Mode | Model Selection | Use Case |
+|------|-----------------|----------|
+| `primary` | Respects UI-selected model, uses fallback chain | Main orchestrators (Sisyphus) |
+| `subagent` | Uses own fallback chain, ignores UI | Specialized workers (Oracle, Librarian) |
+| `all` | Available in both contexts | Versatile agents (Sisyphus-Junior) |
+
+## Permission System
+
+Restrict tool access per agent:
+
+```typescript
+interface PermissionConfig {
+  [toolName: string]: "allow" | "deny"
+}
+
+const oraclePermissions: PermissionConfig = {
+  write: "deny",
+  edit: "deny",
+  apply_patch: "deny",
+  task: "deny",
+  call_omo_agent: "deny"
+}
+```
+
+**Helper Function**:
+
+```typescript
+import { createAgentToolRestrictions } from "../shared/permission-compat"
+
+const restrictions = createAgentToolRestrictions([
+  "write",
+  "edit",
+  "task"
+])
+// Returns: { permission: { write: "deny", edit: "deny", task: "deny" } }
+```
+
+**Source**: `src/agents/oracle.ts:146`
+
+## Building a Custom Agent
+
+<Steps>
+
+### Create Agent File
+
+Create `src/agents/my-agent.ts`:
+
+```typescript
+import type { AgentConfig } from "@opencode-ai/sdk"
+import type { AgentMode } from "./types"
+import { createAgentToolRestrictions } from "../shared/permission-compat"
+
+const MODE: AgentMode = "subagent"
+
+const SYSTEM_PROMPT = `You are a specialized agent for [purpose].
+
+<role>
+You [core responsibility]. You do NOT [boundaries].
+</role>
+
+<workflow>
+1. [Step one]
+2. [Step two]
+3. [Step three]
+</workflow>
+
+<constraints>
+- [Constraint 1]
+- [Constraint 2]
+</constraints>`
+
+export function createMyAgent(model: string): AgentConfig {
+  const restrictions = createAgentToolRestrictions(["write", "edit"])
+
+  return {
+    description: "Brief agent description for user",
+    mode: MODE,
+    model,
+    temperature: 0.1,
+    maxTokens: 16000,
+    prompt: SYSTEM_PROMPT,
+    ...restrictions,
+    thinking: { type: "enabled", budgetTokens: 16000 }
+  }
+}
+createMyAgent.mode = MODE
+```
+
+### Register in Built-in Agents
+
+Add to `src/agents/builtin-agents.ts`:
+
+```typescript
+import { createMyAgent } from "./my-agent"
+
+export function createBuiltinAgents(deps: BuildAgentDeps) {
+  const agents: Record<string, AgentConfig> = {}
+
+  // ... existing agents
+
+  if (!deps.disabledAgents.has("my-agent")) {
+    agents["my-agent"] = buildAgent(
+      createMyAgent,
+      deps.model,
+      deps.categories,
+      deps.gitMasterConfig,
+      deps.browserProvider,
+      deps.disabledSkills
+    )
+  }
+
+  return agents
+}
+```
+
+### Add to Configuration Schema
+
+Register in `src/config/schema/agents.ts`:
+
+```typescript
+export const AgentNameSchema = z.enum([
+  // ... existing agents
+  "my-agent",
+])
+
+export type AgentName = z.infer<typeof AgentNameSchema>
+```
+
+### Configure Model Requirements
+
+Define fallback chain in `src/shared/model-requirements.ts`:
+
+```typescript
+export const AGENT_MODEL_REQUIREMENTS: Record<string, ModelRequirement> = {
+  // ... existing agents
+  "my-agent": {
+    requiredCapabilities: ["reasoning", "tool-use"],
+    fallbackChain: ["claude-opus-4-6", "gpt-5.2", "gemini-3-pro"],
+    minimumTier: "tier-2"
+  }
+}
+```
+
+</Steps>
+
+## Agent Builder
+
+The `buildAgent()` function composes agent configurations:
+
+```typescript
+import { buildAgent } from "./agents/agent-builder"
+
+const agent = buildAgent(
+  createMyAgent,           // Factory function
+  "claude-opus-4-6",       // Model
+  categories,              // Category configs
+  gitMasterConfig,         // Git configuration
+  browserProvider,         // Browser automation
+  disabledSkills           // Skill filter
+)
+```
+
+**Source**: `src/agents/agent-builder.ts:14`
+
+### Agent Builder Logic
+
+```typescript
+export function buildAgent(
+  source: AgentSource,
+  model: string,
+  categories?: CategoriesConfig,
+  gitMasterConfig?: GitMasterConfig,
+  browserProvider?: BrowserAutomationProvider,
+  disabledSkills?: Set<string>
+): AgentConfig {
+  const base = isFactory(source) ? source(model) : { ...source }
+  const categoryConfigs = mergeCategories(categories)
+
+  // Apply category config
+  if (base.category) {
+    const categoryConfig = categoryConfigs[base.category]
+    if (categoryConfig) {
+      if (!base.model) base.model = categoryConfig.model
+      if (base.temperature === undefined) {
+        base.temperature = categoryConfig.temperature
+      }
+    }
+  }
+
+  // Inject skills
+  if (base.skills?.length) {
+    const { resolved } = resolveMultipleSkills(base.skills, {
+      gitMasterConfig,
+      browserProvider,
+      disabledSkills
+    })
+    if (resolved.size > 0) {
+      const skillContent = Array.from(resolved.values()).join("\n\n")
+      base.prompt = skillContent + (base.prompt ? "\n\n" + base.prompt : "")
+    }
+  }
+
+  return base
+}
+```
+
+**Source**: `src/agents/agent-builder.ts:14`
+
+## Dynamic Prompt Building
+
+Sisyphus demonstrates dynamic prompt construction:
+
+```typescript
+function buildDynamicSisyphusPrompt(
+  model: string,
+  availableAgents: AvailableAgent[],
+  availableTools: AvailableTool[],
+  availableSkills: AvailableSkill[],
+  availableCategories: AvailableCategory[],
+  useTaskSystem: boolean
+): string {
+  const keyTriggers = buildKeyTriggersSection(availableAgents, availableSkills)
+  const toolSelection = buildToolSelectionTable(availableAgents, availableTools, availableSkills)
+  const delegationTable = buildDelegationTable(availableAgents)
+  const taskManagement = buildTaskManagementSection(useTaskSystem)
+
+  return `<Role>
+You are "Sisyphus"...
+</Role>
+
+${keyTriggers}
+${toolSelection}
+${delegationTable}
+${taskManagement}`
+}
+```
+
+**Source**: `src/agents/sisyphus.ts:151`
+
+**Pattern**: Build prompts from available context (agents, tools, skills).
+
+## Model-Specific Configuration
+
+Adjust settings per model family:
+
+```typescript
+export function createMyAgent(model: string): AgentConfig {
+  const base = {
+    description: "My agent",
+    mode: "subagent" as AgentMode,
+    model,
+    temperature: 0.1,
+    prompt: SYSTEM_PROMPT
+  }
+
+  // GPT models: use reasoning effort
+  if (isGptModel(model)) {
+    return { ...base, reasoningEffort: "medium" }
+  }
+
+  // Claude/Gemini: use extended thinking
+  return { ...base, thinking: { type: "enabled", budgetTokens: 32000 } }
+}
+```
+
+**Model Detection Helpers**:
+
+```typescript
+import { isGptModel, isGeminiModel, isClaudeModel } from "./types"
+
+function isGptModel(model: string): boolean {
+  return /gpt-[0-9]/.test(model.toLowerCase())
+}
+
+function isGeminiModel(model: string): boolean {
+  return /gemini/.test(model.toLowerCase())
+}
+```
+
+**Source**: `src/agents/types.ts`
+
+## Subagent Invocation
+
+Agents are invoked via the `task` or `call_omo_agent` tools:
+
+### Via task Tool (Recommended)
+
+```typescript
+task({
+  subagent_type: "my-agent",     // Agent name
+  run_in_background: false,      // Sync execution
+  description: "Analyze code",
+  prompt: "Analyze the auth implementation for security issues"
+})
+```
+
+### Via call_omo_agent Tool
+
+```typescript
+call_omo_agent({
+  subagent_type: "my-agent",
+  run_in_background: true,       // Async execution
+  description: "Background analysis",
+  prompt: "Review all authentication handlers"
+})
+```
+
+## Agent Prompt Metadata
+
+Document agent usage patterns:
+
+```typescript
+import type { AgentPromptMetadata } from "./types"
+
+export const MY_AGENT_METADATA: AgentPromptMetadata = {
+  category: "specialist",           // Category classification
+  cost: "MODERATE",                 // CHEAP | MODERATE | EXPENSIVE
+  promptAlias: "MyAgent",           // Display name
+  triggers: [
+    {
+      domain: "Security Analysis",
+      trigger: "Authentication, authorization, or encryption questions"
+    },
+    {
+      domain: "Code Review",
+      trigger: "Security-focused code review requests"
+    }
+  ],
+  useWhen: [
+    "Security vulnerability assessment",
+    "Authentication flow review",
+    "Encryption implementation validation"
+  ],
+  avoidWhen: [
+    "General code review (use Oracle)",
+    "Performance optimization (use Hephaestus)",
+    "Trivial security questions (answer directly)"
+  ]
+}
+```
+
+## Built-in Agent Examples
+
+### Oracle Agent
+
+**Purpose**: Read-only strategic advisor for complex decisions
+
+**Key Features**:
+- Tool restrictions: No write/edit/task tools
+- High thinking budget: 32000 tokens
+- Structured response format: Bottom line → Action plan → Rationale
+- Effort estimation: Quick/Short/Medium/Large tags
+
+**Source**: `src/agents/oracle.ts:145`
+
+### Sisyphus Agent
+
+**Purpose**: Main orchestrator with delegation capabilities
+
+**Key Features**:
+- Dynamic prompt building from available agents/tools/skills
+- Intent verbalization before classification
+- Mandatory todo/task management for multi-step work
+- Model-specific overlays (Gemini tool mandate)
+- Parallel execution default
+
+**Source**: `src/agents/sisyphus.ts:550`
+
+### Hephaestus Agent
+
+**Purpose**: Autonomous deep worker for complex implementation
+
+**Key Features**:
+- GPT-5.3-codex requirement (no fallback)
+- High reasoning effort
+- No subagent delegation (works independently)
+- Focus on implementation depth
+
+**Source**: `src/agents/hephaestus.ts`
+
+## Agent Configuration Override
+
+Users can override agent settings via `oh-my-opencode.jsonc`:
+
+```jsonc
+{
+  "agents": {
+    "my-agent": {
+      "model": "claude-opus-4-6",
+      "temperature": 0.2,
+      "disabled": false
+    }
+  }
+}
+```
+
+The agent builder merges user overrides with defaults.
+
+## Agent Resolution
+
+The session agent resolver determines which agent owns a session:
+
+```typescript
+import { resolveSessionAgent } from "../plugin/session-agent-resolver"
+
+const agent = await resolveSessionAgent({
+  sessionID: "ses_123",
+  client: ctx.client,
+  directory: ctx.directory
+})
+
+if (agent === "my-agent") {
+  // Apply agent-specific logic
+}
+```
+
+**Source**: `src/plugin/session-agent-resolver.ts`
+
+## Testing Agents
+
+Test agent factories:
+
+```typescript
+import { describe, test, expect } from "bun:test"
+import { createMyAgent } from "./my-agent"
+
+describe("createMyAgent", () => {
+  test("returns valid AgentConfig", () => {
+    const config = createMyAgent("claude-opus-4-6")
+
+    expect(config.model).toBe("claude-opus-4-6")
+    expect(config.mode).toBe("subagent")
+    expect(config.permission?.write).toBe("deny")
+  })
+
+  test("uses reasoning effort for GPT models", () => {
+    const config = createMyAgent("gpt-5.2")
+
+    expect(config.reasoningEffort).toBe("medium")
+    expect(config.thinking).toBeUndefined()
+  })
+})
+```
+
+## Related Files
+
+- **Agent Builder**: `src/agents/agent-builder.ts`
+- **Agent Types**: `src/agents/types.ts`
+- **Built-in Agents**: `src/agents/builtin-agents.ts`
+- **Agent Registry**: `src/agents/index.ts`
+- **Session Agent Resolver**: `src/plugin/session-agent-resolver.ts`
+- **Model Requirements**: `src/shared/model-requirements.ts`

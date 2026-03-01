@@ -1,0 +1,550 @@
+---
+title: 'Agent Model Matching'
+description: 'Which models work best for each agent, safe overrides, and fallback chains'
+icon: 'microchip'
+---
+
+## The Core Insight
+
+Think of AI models as developers on a team. Each has a different brain, different personality, different strengths.
+
+<Note>
+**A model isn't just "smarter" or "dumber." It thinks differently.**
+
+Give the same instruction to Claude and GPT, and they'll interpret it in fundamentally different ways.
+</Note>
+
+Oh My OpenCode assigns each agent a model that matches its *working style*—like building a team where each person is in the role that fits their personality.
+
+## How Claude and GPT Think Differently
+
+<Tabs>
+<Tab title="Claude">
+
+### Mechanics-Driven
+
+**Best with:**
+- Detailed checklists
+- Step-by-step procedures
+- Explicit templates
+- Nested workflows
+
+**Philosophy:**
+More rules = more compliance. You can write a 1,100-line prompt with nested workflows and Claude will follow every step.
+
+**Example agent:**
+Prometheus's Claude prompt is ~1,100 lines across 7 files.
+
+</Tab>
+
+<Tab title="GPT (5.2+)">
+
+### Principle-Driven
+
+**Best with:**
+- Concise principles
+- XML structure
+- Explicit decision criteria
+- Goal-oriented instructions
+
+**Philosophy:**
+More rules = more contradiction surface = more drift. GPT works best when you state the goal and let it figure out the mechanics.
+
+**Example agent:**
+Prometheus's GPT prompt achieves the same behavior with 3 principles in ~121 lines.
+
+</Tab>
+</Tabs>
+
+Agents that support both families (Prometheus, Atlas) **auto-detect** your model at runtime and switch prompts.
+
+## Agent Profiles
+
+### Communicators → Claude / Kimi / GLM
+
+These agents have Claude-optimized prompts—long, detailed, mechanics-driven. They need models that reliably follow complex, multi-layered instructions.
+
+<AccordionGroup>
+<Accordion title="Sisyphus" icon="user-gear">
+
+**Role:** Main orchestrator  
+**Model:** Claude Opus 4.6
+
+**Why Claude:**
+- Follows complex multi-step instructions (prompt is ~1,100 lines)
+- Maintains conversation flow across many tool calls
+- Understands nuanced delegation patterns
+- Produces well-structured output
+
+**Fallback chain:**
+```
+Claude Opus → Kimi K2.5 → GLM 5
+```
+
+**Notes:**
+- **No GPT prompt exists** — Sisyphus is Claude-family only
+- Using Sisyphus with GPT would be like taking your best project manager and sticking them in a room alone to debug a race condition
+
+</Accordion>
+
+<Accordion title="Metis" icon="magnifying-glass">
+
+**Role:** Plan gap analyzer  
+**Model:** Claude Opus 4.6
+
+**Why Claude:**
+- Excellent at finding ambiguities
+- Detects AI-slop patterns
+- Identifies hidden intentions
+
+**Fallback chain:**
+```
+Claude Opus → Kimi K2.5 → GPT-5.2 → Gemini 3 Pro
+```
+
+**Notes:**
+Claude preferred, GPT acceptable fallback.
+
+</Accordion>
+</AccordionGroup>
+
+### Dual-Prompt Agents → Claude preferred, GPT supported
+
+These agents ship **separate prompts** for Claude and GPT families. They auto-detect your model and switch at runtime.
+
+<AccordionGroup>
+<Accordion title="Prometheus" icon="map">
+
+**Role:** Strategic planner  
+**Model:** Claude Opus 4.6 (with extended thinking)
+
+**Why dual-prompt:**
+- Claude: detailed mechanics for interview process
+- GPT: compact principle-driven planning
+
+**Fallback chain:**
+```
+Claude Opus → GPT-5.2 → Kimi K2.5 → Gemini 3 Pro
+```
+
+**Auto-detection:**
+```typescript
+if (isGptModel(modelID)) {
+  return GPT_PROMETHEUS_PROMPT  // ~121 lines
+} else {
+  return CLAUDE_PROMETHEUS_PROMPT  // ~1,100 lines
+}
+```
+
+</Accordion>
+
+<Accordion title="Atlas" icon="list-check">
+
+**Role:** Todo orchestrator  
+**Model:** Kimi K2.5
+
+**Why Kimi:**
+Claude-like behavior at lower cost. Sweet spot for orchestration.
+
+**Fallback chain:**
+```
+Kimi K2.5 → Claude Sonnet → GPT-5.2
+```
+
+**Auto-detection:**
+Switches between Claude-optimized and GPT-optimized prompts.
+
+</Accordion>
+</AccordionGroup>
+
+### Deep Specialists → GPT
+
+These agents are built for GPT's principle-driven style. Their prompts assume autonomous, goal-oriented execution.
+
+<AccordionGroup>
+<Accordion title="Hephaestus" icon="hammer">
+
+**Role:** Autonomous deep worker  
+**Model:** GPT-5.3 Codex (medium reasoning)
+
+**Why GPT:**
+- Deep autonomous exploration
+- Multi-file reasoning
+- Principle-driven execution (goal, not recipe)
+- Works independently for extended periods
+
+**Fallback chain:**
+```
+GPT-5.3 Codex only (no fallback)
+```
+
+**Notes:**
+- **Do not override to Claude.** Hephaestus is built for Codex's autonomous style.
+- Named after Greek god of forge and craftsmanship.
+- Inspired by AmpCode's deep mode.
+
+</Accordion>
+
+<Accordion title="Oracle" icon="crystal-ball">
+
+**Role:** Architecture consultant  
+**Model:** GPT-5.2
+
+**Why GPT:**
+- High-IQ strategic reasoning
+- Deep logical analysis
+- Read-only consultation
+
+**Fallback chain:**
+```
+GPT-5.2 → Gemini 3 Pro → Claude Opus
+```
+
+</Accordion>
+
+<Accordion title="Momus" icon="user-check">
+
+**Role:** Ruthless plan reviewer  
+**Model:** GPT-5.2
+
+**Why GPT:**
+- Verification and critique
+- Different perspective from Claude
+- Rigorous logic
+
+**Fallback chain:**
+```
+GPT-5.2 → Claude Opus → Gemini 3 Pro
+```
+
+</Accordion>
+</AccordionGroup>
+
+### Utility Runners → Speed over Intelligence
+
+These agents do grep, search, and retrieval. They intentionally use the **fastest, cheapest models** available.
+
+<Warning>
+**Don't "upgrade" utility agents to Opus.** That's hiring a senior engineer to file paperwork.
+</Warning>
+
+<AccordionGroup>
+<Accordion title="Explore" icon="magnifying-glass-chart">
+
+**Role:** Fast codebase grep  
+**Model:** Grok Code Fast 1
+
+**Why fast/cheap:**
+- Speed is everything
+- Fire 10 in parallel
+- Simple pattern matching
+
+**Fallback chain:**
+```
+Grok Code Fast → MiniMax → Haiku → GPT-5-Nano
+```
+
+</Accordion>
+
+<Accordion title="Librarian" icon="book">
+
+**Role:** Docs/code search  
+**Model:** Gemini Flash
+
+**Why fast/cheap:**
+- Doc retrieval doesn't need deep reasoning
+- High volume of searches
+
+**Fallback chain:**
+```
+Gemini Flash → MiniMax → GLM
+```
+
+</Accordion>
+
+<Accordion title="Multimodal Looker" icon="image">
+
+**Role:** Vision/screenshots  
+**Model:** Kimi K2.5
+
+**Why Kimi:**
+- Excels at multimodal understanding
+- Good image analysis
+
+**Fallback chain:**
+```
+Kimi K2.5 → Gemini Flash → GPT-5.2 → GLM-4.6v
+```
+
+</Accordion>
+</AccordionGroup>
+
+## Model Families
+
+### Claude Family
+
+**Characteristics:**
+- Communicative
+- Instruction-following
+- Structured output
+
+| Model | Strengths | Use For |
+|-------|-----------|----------|
+| **Claude Opus 4.6** | Best overall. Highest compliance with complex prompts. | Sisyphus, Prometheus |
+| **Claude Sonnet 4.6** | Faster, cheaper. Good balance. | Everyday tasks |
+| **Claude Haiku 4.5** | Fast and cheap. | Quick tasks, utility work |
+| **Kimi K2.5** | Claude-like behavior at lower cost. | Atlas, all-rounder |
+| **GLM 5** | Claude-like, solid for orchestration. | Cost-effective orchestration |
+
+### GPT Family
+
+**Characteristics:**
+- Principle-driven
+- Explicit reasoning
+- Deep technical capability
+
+| Model | Strengths | Use For |
+|-------|-----------|----------|
+| **GPT-5.3 Codex** | Deep coding powerhouse. Autonomous exploration. | Hephaestus (required) |
+| **GPT-5.2** | High intelligence, strategic reasoning. | Oracle, Momus |
+| **GPT-5-Nano** | Ultra-cheap, fast. | Simple utility tasks |
+
+### Other Models
+
+| Model | Strengths | Use For |
+|-------|-----------|----------|
+| **Gemini 3 Pro** | Visual/frontend tasks. Different reasoning style. | `visual-engineering`, `artistry` |
+| **Gemini 3 Flash** | Fast. Doc search and light tasks. | Librarian |
+| **Grok Code Fast 1** | Blazing fast code grep. | Explore |
+| **MiniMax M2.5** | Fast and smart. Utility tasks. | Fallback for search/retrieval |
+
+### Free-Tier Fallbacks
+
+You may see model names like `kimi-k2.5-free`, `minimax-m2.5-free`, or `big-pickle` (GLM 4.6) in logs. These are free-tier versions served through OpenCode Zen provider.
+
+<Note>
+You don't need to configure free-tier fallbacks. The system includes them automatically so it degrades gracefully when you don't have every paid subscription.
+</Note>
+
+## Task Categories
+
+When agents delegate work, they don't pick a model name—they pick a **category**. The category maps to the right model automatically.
+
+| Category | When Used | Fallback Chain |
+|----------|-----------|----------------|
+| `visual-engineering` | Frontend, UI, CSS, design | Gemini 3 Pro → GLM 5 → Claude Opus |
+| `ultrabrain` | Maximum reasoning needed | GPT-5.3 Codex → Gemini 3 Pro → Claude Opus |
+| `deep` | Deep coding, complex logic | GPT-5.3 Codex → Claude Opus → Gemini 3 Pro |
+| `artistry` | Creative, novel approaches | Gemini 3 Pro → Claude Opus → GPT-5.2 |
+| `quick` | Simple, fast tasks | Claude Haiku → Gemini Flash → GPT-5-Nano |
+| `unspecified-high` | General complex work | Claude Opus → GPT-5.2 → Gemini 3 Pro |
+| `unspecified-low` | General standard work | Claude Sonnet → GPT-5.3 Codex → Gemini Flash |
+| `writing` | Text, docs, prose | Gemini Flash → Claude Sonnet |
+
+<Tip>
+See the [Orchestration Guide](/guides/prometheus-planning) for how agents dispatch tasks to categories.
+</Tip>
+
+## Customization
+
+### Example Configuration
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+
+  "agents": {
+    // Main orchestrator: Claude Opus or Kimi K2.5 work best
+    "sisyphus": {
+      "model": "kimi-for-coding/k2p5",
+      "ultrawork": { 
+        "model": "anthropic/claude-opus-4-6", 
+        "variant": "max" 
+      }
+    },
+
+    // Research agents: cheaper models are fine
+    "librarian": { "model": "zai-coding-plan/glm-4.7" },
+    "explore":   { "model": "github-copilot/grok-code-fast-1" },
+
+    // Architecture consultation: GPT or Claude Opus
+    "oracle": { 
+      "model": "openai/gpt-5.2", 
+      "variant": "high" 
+    },
+
+    // Prometheus inherits sisyphus model; just add prompt guidance
+    "prometheus": { 
+      "prompt_append": "Leverage deep & quick agents heavily, always in parallel." 
+    }
+  },
+
+  "categories": {
+    "quick": { "model": "opencode/gpt-5-nano" },
+    "unspecified-low": { "model": "kimi-for-coding/k2p5" },
+    "unspecified-high": { 
+      "model": "anthropic/claude-sonnet-4-6", 
+      "variant": "max" 
+    },
+    "visual-engineering": { 
+      "model": "google/gemini-3-pro", 
+      "variant": "high" 
+    },
+    "writing": { "model": "kimi-for-coding/k2p5" }
+  },
+
+  // Limit expensive providers; let cheap ones run freely
+  "background_task": {
+    "providerConcurrency": { 
+      "anthropic": 3, 
+      "openai": 3, 
+      "opencode": 10, 
+      "zai-coding-plan": 10 
+    },
+    "modelConcurrency": { 
+      "anthropic/claude-opus-4-6": 2, 
+      "opencode/gpt-5-nano": 20 
+    }
+  }
+}
+```
+
+### Safe vs Dangerous Overrides
+
+<Tabs>
+<Tab title="✅ Safe">
+
+**Same personality type:**
+
+```json
+{
+  "agents": {
+    // Sisyphus: Opus → Sonnet, Kimi K2.5, GLM 5
+    // All communicative models
+    "sisyphus": { "model": "kimi-for-coding/k2p5" },
+    
+    // Prometheus: Opus → GPT-5.2
+    // Auto-switches to GPT prompt
+    "prometheus": { "model": "openai/gpt-5.2" },
+    
+    // Atlas: Kimi K2.5 → Sonnet, GPT-5.2
+    // Auto-switches to GPT prompt
+    "atlas": { "model": "anthropic/claude-sonnet-4-6" }
+  }
+}
+```
+
+</Tab>
+
+<Tab title="❌ Dangerous">
+
+**Personality mismatch:**
+
+```json
+{
+  "agents": {
+    // ❌ Sisyphus → GPT
+    // No GPT prompt exists. Will degrade significantly.
+    "sisyphus": { "model": "openai/gpt-5.2" },
+    
+    // ❌ Hephaestus → Claude
+    // Built for Codex's autonomous style. Claude can't replicate.
+    "hephaestus": { "model": "anthropic/claude-opus-4-6" },
+    
+    // ❌ Explore → Opus
+    // Massive cost waste. Explore needs speed, not intelligence.
+    "explore": { "model": "anthropic/claude-opus-4-6" },
+    
+    // ❌ Librarian → Opus
+    // Same. Doc search doesn't need Opus-level reasoning.
+    "librarian": { "model": "anthropic/claude-opus-4-6" }
+  }
+}
+```
+
+</Tab>
+</Tabs>
+
+### Model Resolution
+
+Each agent has a fallback chain. The system tries models in priority order until it finds one available through your connected providers.
+
+```
+Agent Request → User Override (if configured) → Fallback Chain → System Default
+```
+
+You don't need to configure providers per model—just authenticate (`opencode auth login`) and the system figures out which models are available and where.
+
+## Checking Available Models
+
+```bash
+# List all models you have access to
+opencode models
+
+# Run diagnostics
+bunx oh-my-opencode doctor --verbose
+```
+
+## Common Questions
+
+<AccordionGroup>
+<Accordion title="Can I use GPT for Sisyphus?">
+No. Sisyphus has no GPT prompt. It's designed for Claude's mechanics-driven instruction-following. Using GPT will significantly degrade performance.
+
+If you want GPT-style reasoning, use **Hephaestus** instead.
+</Accordion>
+
+<Accordion title="Why does Hephaestus require GPT?">
+Hephaestus is built around GPT-5.3 Codex's autonomous exploration style. Its prompt assumes:
+- Goal-oriented execution
+- Minimal hand-holding
+- Deep independent reasoning
+
+Claude's mechanics-driven style doesn't match this working pattern.
+</Accordion>
+
+<Accordion title="Which models can I use for Prometheus?">
+Prometheus auto-detects Claude vs GPT and switches prompts accordingly. Safe options:
+- Claude: Opus, Sonnet, Kimi K2.5, GLM 5
+- GPT: GPT-5.2, GPT-5.3 Codex
+- Gemini: Gemini 3 Pro (uses Claude-style prompt)
+</Accordion>
+
+<Accordion title="How do I make all agents cheaper?">
+Target utility agents first:
+
+```json
+{
+  "agents": {
+    "explore": { "model": "opencode/gpt-5-nano" },
+    "librarian": { "model": "opencode/gpt-5-nano" }
+  },
+  "categories": {
+    "quick": { "model": "opencode/gpt-5-nano" }
+  }
+}
+```
+
+Keep Sisyphus/Prometheus on quality models—they're worth it.
+</Accordion>
+</AccordionGroup>
+
+## Related
+
+<CardGroup cols={2}>
+<Card title="Custom Categories" icon="layer-group" href="/guides/custom-categories">
+Define domain-specific model presets
+</Card>
+
+<Card title="Background Agents" icon="rotate" href="/guides/background-agents">
+Concurrency limits per model/provider
+</Card>
+
+<Card title="Prometheus Planning" icon="map" href="/guides/prometheus-planning">
+Why Prometheus uses Claude Opus with extended thinking
+</Card>
+
+<Card title="Configuration" icon="gear" href="/configuration/agents">
+Full agent configuration reference
+</Card>
+</CardGroup>

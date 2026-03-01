@@ -1,0 +1,369 @@
+---
+title: Comment Checker
+description: AI comment detection and slop prevention for maintaining code quality
+---
+
+The Comment Checker feature detects and blocks AI-generated comment patterns ("slop") to maintain code quality. It runs as a `tool.execute.after` hook on Write, Edit, and MultiEdit operations.
+
+## Overview
+
+AI models often generate generic, low-value comments like:
+
+```typescript
+// Initialize variables
+const count = 0
+
+// Helper function to calculate sum
+function add(a: number, b: number): number {
+  return a + b
+}
+
+// This function does X
+function doSomething() { ... }
+```
+
+Comment Checker uses AST-based pattern detection to identify and reject these patterns before they're written to disk.
+
+## Architecture
+
+<Steps>
+  <Step title="tool.execute.before">
+    Register pending call with file path and content
+  </Step>
+  <Step title="Tool Execution">
+    Write/Edit/MultiEdit executes normally
+  </Step>
+  <Step title="tool.execute.after">
+    Run comment-checker CLI on written content
+  </Step>
+  <Step title="Detection">
+    If slop detected → inject error into tool result
+  </Step>
+  <Step title="Retry">
+    Agent sees error and rewrites without slop comments
+  </Step>
+</Steps>
+
+**Source:** `src/hooks/comment-checker/hook.ts:31`
+
+## Hook Implementation
+
+```typescript
+// src/hooks/comment-checker/hook.ts
+export function createCommentCheckerHooks(config?: CommentCheckerConfig) {
+  return {
+    'tool.execute.before': async (input, output) => {
+      // Register pending call for Write/Edit/MultiEdit
+      if (toolName === "write" || toolName === "edit" || toolName === "multiedit") {
+        registerPendingCall(input.callID, {
+          filePath,
+          content,
+          oldString,
+          newString,
+          edits,
+          tool: toolName,
+          sessionID: input.sessionID,
+          timestamp: Date.now(),
+        })
+      }
+    },
+
+    'tool.execute.after': async (input, output) => {
+      // Check for AI-generated comments
+      const pendingCall = takePendingCall(input.callID)
+      if (pendingCall) {
+        await processWithCli(input, pendingCall, output, cliPath, config?.custom_prompt)
+      }
+    }
+  }
+}
+```
+
+## Supported Tools
+
+<CardGroup cols={3}>
+  <Card title="Write" icon="file-plus">
+    Checks full file content
+  </Card>
+  <Card title="Edit" icon="pen-to-square">
+    Checks oldString/newString diff
+  </Card>
+  <Card title="MultiEdit" icon="layer-group">
+    Checks all edits array
+  </Card>
+</CardGroup>
+
+**Special handling:** `apply_patch` tool metadata extraction
+
+```typescript
+// src/hooks/comment-checker/hook.ts:119
+if (toolName === "apply_patch") {
+  const parsed = ApplyPatchMetadataSchema.safeParse(output.metadata)
+  if (parsed.success) {
+    const edits = parsed.data.files
+      .filter((f) => f.type !== "delete")
+      .map((f) => ({
+        filePath: f.movePath ?? f.filePath,
+        before: f.before,
+        after: f.after,
+      }))
+    await processApplyPatchEditsWithCli(...)
+  }
+}
+```
+
+## Detection Patterns
+
+The comment-checker CLI uses AST-based detection for:
+
+### Generic Initializers
+
+```typescript
+// ❌ Detected as slop
+// Initialize variables
+// Set up the state
+// Define constants
+
+// ✅ Allowed (specific context)
+// Memoize expensive calculation to avoid re-renders
+```
+
+### Helper Function Comments
+
+```typescript
+// ❌ Detected as slop
+// Helper function to...
+// Utility function for...
+// Function to calculate...
+
+// ✅ Allowed (explains why/when)
+// Optimized for large datasets using binary search
+```
+
+### Redundant Descriptions
+
+```typescript
+// ❌ Detected as slop
+// This function does X
+// This class handles Y
+// Returns the result
+
+// ✅ Allowed (non-obvious behavior)
+// Returns null instead of throwing to support optional chaining
+```
+
+## CLI Runner
+
+**Source:** `src/hooks/comment-checker/cli-runner.ts`
+
+The hook uses an external CLI binary for AST-based detection:
+
+```typescript
+// Initialize CLI (downloads if needed)
+initializeCommentCheckerCli(debugLog)
+
+// Process file content
+await processWithCli(
+  input,
+  pendingCall,
+  output,
+  cliPath,
+  customPrompt,
+  debugLog
+)
+```
+
+**CLI location:** Platform-specific binary in `packages/comment-checker/`
+
+## Configuration
+
+### Enable/Disable
+
+```jsonc
+{
+  "disabled_hooks": [
+    "comment-checker"  // Disable slop prevention
+  ]
+}
+```
+
+### Custom Prompt
+
+```jsonc
+{
+  "comment_checker": {
+    "custom_prompt": "Avoid generic comments. Explain the WHY, not the WHAT."
+  }
+}
+```
+
+**Config schema:** `src/config/schema/comment-checker.ts`
+
+```typescript
+export const CommentCheckerConfigSchema = z.object({
+  custom_prompt: z.string().optional(),
+})
+```
+
+## Error Injection
+
+When slop is detected, the hook modifies the tool result:
+
+```typescript
+// Before (normal Write result)
+{
+  title: "File written",
+  output: "Successfully wrote to /path/to/file.ts"
+}
+
+// After (slop detected)
+{
+  title: "File written",
+  output: "Successfully wrote to /path/to/file.ts\n\n" +
+          "⚠️  AI-GENERATED COMMENT DETECTED\n" +
+          "Generic comments found on lines: 5, 12, 23\n" +
+          "Please rewrite without:\n" +
+          "  - 'Initialize variables'\n" +
+          "  - 'Helper function to...'\n" +
+          "  - 'This function does X'"
+}
+```
+
+The agent sees this in the tool result and automatically rewrites.
+
+## Pending Call Management
+
+**Source:** `src/hooks/comment-checker/pending-calls.ts`
+
+Tracks Write/Edit calls from before → after hooks:
+
+```typescript
+const pendingCalls = new Map<string, PendingCall>()
+
+// Register in tool.execute.before
+registerPendingCall(callID, {
+  filePath: "/path/to/file.ts",
+  content: "...",
+  tool: "write",
+  sessionID,
+  timestamp: Date.now(),
+})
+
+// Retrieve in tool.execute.after
+const call = takePendingCall(callID)
+```
+
+**Auto-cleanup:** Calls older than 60s are automatically removed.
+
+```typescript
+// src/hooks/comment-checker/pending-calls.ts
+startPendingCallCleanup()  // Runs every 30s
+```
+
+## Debug Mode
+
+Enable verbose logging:
+
+```bash
+COMMENT_CHECKER_DEBUG=1 opencode
+```
+
+**Log location:** `/tmp/comment-checker-debug.log`
+
+```typescript
+// src/hooks/comment-checker/hook.ts:19
+const DEBUG = process.env.COMMENT_CHECKER_DEBUG === "1"
+const DEBUG_FILE = join(tmpdir(), "comment-checker-debug.log")
+
+function debugLog(...args: unknown[]) {
+  if (DEBUG) {
+    const msg = `[${new Date().toISOString()}] [comment-checker:hook] ${args
+      .map((a) => (typeof a === "object" ? JSON.stringify(a, null, 2) : String(a)))
+      .join(" ")}\n`
+    fs.appendFileSync(DEBUG_FILE, msg)
+  }
+}
+```
+
+## Package Structure
+
+**Source:** `packages/comment-checker/`
+
+Separate package with platform binaries:
+
+```
+packages/comment-checker/
+├── src/
+│   ├── cli.ts           # CLI entry point
+│   ├── detector.ts      # AST-based pattern detection
+│   ├── patterns.ts      # Slop patterns
+│   └── parser.ts        # Language parsers
+├── bin/
+│   ├── darwin-arm64     # macOS Apple Silicon
+│   ├── darwin-x64       # macOS Intel
+│   ├── linux-x64        # Linux x64
+│   └── win32-x64.exe    # Windows x64
+└── package.json
+```
+
+## Tool Failure Handling
+
+Skips check if tool execution failed:
+
+```typescript
+// src/hooks/comment-checker/hook.ts:95
+const outputLower = (output.output ?? "").toLowerCase()
+const isToolFailure =
+  outputLower.includes("error:") ||
+  outputLower.includes("failed to") ||
+  outputLower.includes("could not") ||
+  outputLower.startsWith("error")
+
+if (isToolFailure) {
+  debugLog("skipping due to tool failure in output")
+  return
+}
+```
+
+## Integration with Anti-Patterns
+
+**Source:** `AGENTS.md` and `.sisyphus/rules/`
+
+Comment checker enforces repository-wide anti-patterns:
+
+```markdown
+## Anti-Patterns (NEVER)
+
+- Never use emojis in code/comments unless user explicitly asks
+- Never add AI-generated comment patterns (enforced by comment-checker hook)
+- Comments: avoid AI-generated comment patterns
+```
+
+## Source Files
+
+<Accordion title="Hook Implementation (5 files)">
+  - `src/hooks/comment-checker/hook.ts` - Main hook logic
+  - `src/hooks/comment-checker/cli-runner.ts` - CLI execution
+  - `src/hooks/comment-checker/pending-calls.ts` - Call tracking
+  - `src/hooks/comment-checker/types.ts` - Type definitions
+  - `src/hooks/comment-checker/index.ts` - Barrel exports
+</Accordion>
+
+<Accordion title="Configuration (1 file)">
+  - `src/config/schema/comment-checker.ts` - Zod schema
+</Accordion>
+
+<Accordion title="CLI Package (separate)">
+  - `packages/comment-checker/` - Standalone CLI package
+</Accordion>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Hooks" href="/api/features/hooks">
+    Tool Guard hooks including comment-checker
+  </Card>
+  <Card title="Tools" href="/api/tools">
+    Write, Edit, MultiEdit tools that trigger checks
+  </Card>
+</CardGroup>

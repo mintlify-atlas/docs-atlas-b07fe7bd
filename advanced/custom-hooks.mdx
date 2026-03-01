@@ -1,0 +1,457 @@
+---
+title: "Writing Custom Hooks"
+description: "Extend Oh My OpenCode with custom lifecycle hooks for session management, tool execution, and message transformation"
+---
+
+Hooks intercept and modify plugin behavior at specific lifecycle points. Oh My OpenCode uses a three-tier hook system with 46 built-in hooks.
+
+## Hook Tiers
+
+Hooks are organized into tiers based on their execution context:
+
+| Tier | Count | Purpose | Composition File |
+|------|-------|---------|------------------|
+| **Session** | 23 | Session lifecycle, model selection, error recovery | `create-session-hooks.ts` |
+| **Tool Guard** | 10 | Pre/post tool execution validation | `create-tool-guard-hooks.ts` |
+| **Transform** | 4 | Message content transformation | `create-transform-hooks.ts` |
+| **Continuation** | 7 | Session continuation logic | `create-continuation-hooks.ts` |
+| **Skill** | 2 | Skill-based reminders and commands | `create-skill-hooks.ts` |
+
+**Source**: `src/plugin/hooks/` directory
+
+## Hook Events
+
+Hooks respond to OpenCode plugin events:
+
+```typescript
+type HookEvent =
+  | "chat.message"                        // New user message
+  | "chat.params"                         // Before API call (model params)
+  | "tool.execute.before"                 // Before tool execution
+  | "tool.execute.after"                  // After tool execution
+  | "event"                               // Session lifecycle events
+  | "experimental.chat.messages.transform" // Message array transformation
+  | "experimental.session.compacting"     // Context compaction
+```
+
+## Factory Pattern
+
+All hooks follow the `createXXXHook(deps) → HookFunction` factory pattern.
+
+### Basic Hook Structure
+
+```typescript
+// src/hooks/my-custom-hook/index.ts
+import type { PluginContext } from "../../plugin/types"
+
+export function createMyCustomHook(ctx: PluginContext) {
+  return {
+    "chat.params": async (
+      input: { sessionID: string; model: { modelID: string } },
+      output: { temperature?: number; options: Record<string, unknown> }
+    ): Promise<void> => {
+      // Hook logic here
+      if (input.model.modelID.includes("opus")) {
+        output.options.effort = "max"
+      }
+    }
+  }
+}
+```
+
+## Hook Types and Signatures
+
+### chat.params Hook
+
+Modify API request parameters before sending:
+
+```typescript
+export function createAnthropicEffortHook() {
+  return {
+    "chat.params": async (
+      input: {
+        sessionID: string
+        agent: { name?: string }
+        model: { providerID: string; modelID: string }
+        message: { variant?: string }
+      },
+      output: {
+        temperature?: number
+        topP?: number
+        topK?: number
+        options: Record<string, unknown>
+      }
+    ): Promise<void> => {
+      if (input.message.variant === "max") {
+        output.options.effort = "max"
+      }
+    }
+  }
+}
+```
+
+**Source**: `src/hooks/anthropic-effort/hook.ts:35`
+
+### tool.execute.before Hook
+
+Intercept tool calls before execution:
+
+```typescript
+export function createWriteExistingFileGuardHook(ctx: PluginContext) {
+  const readCache = new Set<string>()
+
+  return {
+    "tool.execute.before": async (
+      input: { toolName: string; arguments: Record<string, unknown> },
+      output: { proceed: boolean; error?: string }
+    ): Promise<void> => {
+      if (input.toolName === "read") {
+        readCache.add(input.arguments.filePath as string)
+        return
+      }
+
+      if (input.toolName === "write") {
+        const filePath = input.arguments.filePath as string
+        const exists = await fileExists(filePath)
+        
+        if (exists && !readCache.has(filePath)) {
+          output.proceed = false
+          output.error = "Must read existing file before overwriting"
+        }
+      }
+    }
+  }
+}
+```
+
+**Pattern**: Stateful hooks can maintain per-session caches.
+
+### tool.execute.after Hook
+
+Modify tool results after execution:
+
+```typescript
+export function createToolOutputTruncatorHook(
+  ctx: PluginContext,
+  deps: { modelCacheState: ModelCacheState }
+) {
+  return {
+    "tool.execute.after": async (
+      input: {
+        toolName: string
+        result: { content?: string }
+        sessionID: string
+      },
+      output: { modifiedResult?: unknown }
+    ): Promise<void> => {
+      if (!input.result?.content) return
+
+      const tokenCount = estimateTokens(input.result.content)
+      const limit = 10000
+
+      if (tokenCount > limit) {
+        output.modifiedResult = {
+          ...input.result,
+          content: input.result.content.slice(0, limit * 4) + "\n\n[Output truncated...]"
+        }
+      }
+    }
+  }
+}
+```
+
+### event Hook
+
+Respond to session lifecycle events:
+
+```typescript
+export function createSessionNotification(ctx: PluginContext) {
+  return {
+    event: async (event: {
+      type: "session.created" | "session.deleted" | "session.idle" | "session.error"
+      properties: Record<string, unknown>
+    }): Promise<void> => {
+      if (event.type === "session.idle") {
+        const session = event.properties.info as { id: string; title: string }
+        await showNotification({
+          title: "Session Complete",
+          message: session.title
+        })
+      }
+    }
+  }
+}
+```
+
+### experimental.chat.messages.transform Hook
+
+Transform message arrays before API submission:
+
+```typescript
+export function createContextInjectorHook(ctx: PluginContext) {
+  return {
+    "experimental.chat.messages.transform": async (
+      input: { messages: Array<{ role: string; content: string }> },
+      output: { messages: Array<{ role: string; content: string }> }
+    ): Promise<void> => {
+      const contextMessage = {
+        role: "system",
+        content: await loadContextFiles(ctx.directory)
+      }
+      output.messages = [contextMessage, ...input.messages]
+    }
+  }
+}
+```
+
+## Hook Registration
+
+Register hooks in tier-specific composition files:
+
+<Steps>
+
+### Create Hook Implementation
+
+Create `src/hooks/my-hook/index.ts`:
+
+```typescript
+import type { PluginContext } from "../../plugin/types"
+
+export function createMyHook(ctx: PluginContext) {
+  return {
+    "chat.params": async (input, output) => {
+      // Implementation
+    }
+  }
+}
+```
+
+### Register in Tier File
+
+Add to `src/plugin/hooks/create-session-hooks.ts`:
+
+```typescript
+import { createMyHook } from "../../hooks/my-hook"
+
+export type SessionHooks = {
+  // ... existing hooks
+  myHook: ReturnType<typeof createMyHook> | null
+}
+
+export function createSessionHooks(args) {
+  const myHook = isHookEnabled("my-hook")
+    ? safeHook("my-hook", () => createMyHook(ctx))
+    : null
+
+  return {
+    // ... existing hooks
+    myHook
+  }
+}
+```
+
+### Add to Schema
+
+Register in `src/config/schema/hooks.ts`:
+
+```typescript
+export const HookNameSchema = z.enum([
+  // ... existing hooks
+  "my-hook",
+])
+```
+
+### Wire to Plugin Interface
+
+Hooks are automatically invoked via `createPluginInterface()` in `src/plugin-interface.ts`.
+
+</Steps>
+
+## Hook Composition
+
+Tier composition files aggregate hooks:
+
+```typescript
+// src/plugin/hooks/create-core-hooks.ts
+import { createSessionHooks } from "./create-session-hooks"
+import { createToolGuardHooks } from "./create-tool-guard-hooks"
+import { createTransformHooks } from "./create-transform-hooks"
+
+export function createCoreHooks(args) {
+  const session = createSessionHooks(args)
+  const toolGuard = createToolGuardHooks(args)
+  const transform = createTransformHooks(args)
+
+  return {
+    ...session,
+    ...toolGuard,
+    ...transform
+  }
+}
+```
+
+**Source**: `src/plugin/hooks/create-core-hooks.ts:8`
+
+## Safe Hook Creation
+
+The `safeCreateHook` wrapper prevents individual hook failures from breaking the plugin:
+
+```typescript
+import { safeCreateHook } from "../../shared/safe-create-hook"
+
+const myHook = isHookEnabled("my-hook")
+  ? safeCreateHook("my-hook", () => createMyHook(ctx), { enabled: safeHookEnabled })
+  : null
+```
+
+**Behavior**:
+- Catches exceptions during hook creation
+- Logs errors without crashing
+- Returns `null` on failure
+
+## Hook Examples
+
+### Model Fallback Hook
+
+Automatically switch models on API errors:
+
+```typescript
+export function createModelFallbackHook(deps: {
+  toast: (msg: { title: string; message: string }) => Promise<void>
+  onApplied?: (input: { sessionID: string; modelID: string }) => Promise<void>
+}) {
+  const fallbackChain = {
+    "claude-opus-4-6": ["kimi-k2.5", "glm-4.7", "gemini-3-pro"],
+    "gpt-5.3-codex": [] // No fallback for critical models
+  }
+
+  return {
+    "event": async (event) => {
+      if (event.type === "session.error") {
+        const error = event.properties.error as { code: string }
+        if (error.code === "model_unavailable") {
+          const session = event.properties.info as { id: string; model: string }
+          const nextModel = fallbackChain[session.model]?.[0]
+          
+          if (nextModel) {
+            await updateSessionModel(session.id, nextModel)
+            await deps.toast({
+              title: "Model Fallback",
+              message: `Switched to ${nextModel}`
+            })
+            await deps.onApplied?.({ sessionID: session.id, modelID: nextModel })
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+**Pattern**: Complex hooks with callbacks for UI integration.
+
+### Comment Checker Hook
+
+Block AI-generated comment patterns:
+
+```typescript
+export function createCommentCheckerHooks(config?: { enabled?: boolean }) {
+  if (config?.enabled === false) return null
+
+  const patterns = [
+    /\/\/\s*TODO:/,
+    /\/\/\s*Note:/,
+    /\/\/\s*Example:/
+  ]
+
+  return {
+    "tool.execute.after": async (input, output) => {
+      if (!["write", "edit"].includes(input.toolName)) return
+
+      const content = input.result?.content as string
+      const violations = patterns.filter(p => p.test(content))
+
+      if (violations.length > 0) {
+        output.modifiedResult = {
+          error: "Detected AI-generated comment patterns. Remove TODO/Note/Example comments.",
+          rejectedContent: content
+        }
+      }
+    }
+  }
+}
+```
+
+**Source**: `src/hooks/comment-checker/index.ts`
+
+## Hook Dependencies
+
+Hooks can receive dependencies via factory arguments:
+
+```typescript
+export function createComplexHook(
+  ctx: PluginContext,
+  deps: {
+    modelCacheState: ModelCacheState
+    backgroundManager: BackgroundManager
+    pluginConfig: OhMyOpenCodeConfig
+  }
+) {
+  // Access dependencies
+  const currentModel = deps.modelCacheState.get(sessionID)
+  const tasks = deps.backgroundManager.list()
+  
+  return {
+    "event": async (event) => {
+      // Use dependencies
+    }
+  }
+}
+```
+
+## Disabling Hooks
+
+Disable hooks via configuration:
+
+```jsonc
+{
+  "disabled_hooks": ["my-hook", "another-hook"]
+}
+```
+
+The `isHookEnabled` check prevents disabled hooks from being created.
+
+## Testing Hooks
+
+Test hooks in isolation:
+
+```typescript
+import { describe, test, expect } from "bun:test"
+import { createMyHook } from "./index"
+
+describe("createMyHook", () => {
+  describe("#given model is opus", () => {
+    describe("#when chat.params event fires", () => {
+      test("#then sets effort to max", async () => {
+        const hook = createMyHook(mockCtx)
+        const input = { model: { modelID: "claude-opus-4-6" } }
+        const output = { options: {} }
+
+        await hook["chat.params"](input, output)
+
+        expect(output.options.effort).toBe("max")
+      })
+    })
+  })
+})
+```
+
+**Pattern**: Given/When/Then structure with nested `describe` blocks.
+
+## Related Files
+
+- **Hook Composition**: `src/plugin/hooks/create-*-hooks.ts`
+- **Hook Aggregation**: `src/create-hooks.ts`
+- **Plugin Interface**: `src/plugin-interface.ts`
+- **Safe Hook Creation**: `src/shared/safe-create-hook.ts`
+- **Hook Schema**: `src/config/schema/hooks.ts`

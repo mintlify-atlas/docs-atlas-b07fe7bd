@@ -1,0 +1,495 @@
+---
+title: LSP Tools
+description: Language Server Protocol integration for code intelligence and refactoring
+---
+
+## Overview
+
+Oh My OpenCode provides 6 LSP (Language Server Protocol) tools for code navigation, symbol lookup, diagnostics, and safe renaming. These tools manage their own LSP server processes and provide formatted output optimized for LLM consumption.
+
+**Source**: `src/tools/lsp/`
+
+## Architecture
+
+Custom LSP client stack (does NOT use OpenCode's built-in LSP):
+
+```
+Tool Layer (6 tools)
+  ↓
+LspClientWrapper (lsp-client-wrapper.ts)
+  ↓
+LSPClient (lsp-client.ts)
+  ↓
+LSPClientConnection (lsp-client-connection.ts)
+  ↓
+LSPClientTransport (lsp-client-transport.ts)
+  ↓
+LSPProcess (lsp-process.ts) — spawns server binary
+```
+
+## Tools
+
+### lsp_goto_definition
+
+Jump to symbol definition.
+
+<ParamField path="filePath" type="string" required>
+  Absolute path to file
+</ParamField>
+
+<ParamField path="line" type="number" required>
+  Line number (1-based)
+</ParamField>
+
+<ParamField path="character" type="number" required>
+  Column position (0-based)
+</ParamField>
+
+<ResponseField name="output" type="string">
+  Location(s) in format: `{file}:{line}:{char}`
+  
+  Example:
+  ```
+  /path/to/definition.ts:42:5
+  ```
+  
+  Returns `"No definition found"` if symbol has no definition.
+</ResponseField>
+
+**Example**:
+
+```typescript
+// Find definition of "processData" at line 15, column 10
+lsp_goto_definition({
+  filePath: "/workspace/src/utils.ts",
+  line: 15,
+  character: 10
+})
+// → "/workspace/src/processor.ts:42:0"
+```
+
+**Source**: `goto-definition-tool.ts:7`
+
+---
+
+### lsp_find_references
+
+Find all usages/references of a symbol across the workspace.
+
+<ParamField path="filePath" type="string" required>
+  Absolute path to file
+</ParamField>
+
+<ParamField path="line" type="number" required>
+  Line number (1-based)
+</ParamField>
+
+<ParamField path="character" type="number" required>
+  Column position (0-based)
+</ParamField>
+
+<ParamField path="includeDeclaration" type="boolean">
+  Include the declaration itself (default: `true`)
+</ParamField>
+
+<ResponseField name="output" type="string">
+  List of locations, one per line
+  
+  Example:
+  ```
+  /workspace/src/utils.ts:15:10
+  /workspace/src/processor.ts:42:5
+  /workspace/tests/utils.test.ts:8:20
+  ```
+  
+  If more than 100 references found (configurable), shows:
+  ```
+  Found 150 references (showing first 100):
+  ...
+  ```
+</ResponseField>
+
+**Example**:
+
+```typescript
+lsp_find_references({
+  filePath: "/workspace/src/api.ts",
+  line: 23,
+  character: 15,
+  includeDeclaration: false // Exclude definition location
+})
+```
+
+**Source**: `find-references-tool.ts:8`
+
+**Configuration**: `DEFAULT_MAX_REFERENCES = 100` in `constants.ts`
+
+---
+
+### lsp_symbols
+
+Get document outline or search workspace symbols.
+
+<ParamField path="filePath" type="string" required>
+  Absolute path to file
+</ParamField>
+
+<ParamField path="scope" type="enum">
+  Symbol scope: `"document"` | `"workspace"`
+  
+  - `document`: Outline of current file
+  - `workspace`: Search across all files
+</ParamField>
+
+<ParamField path="query" type="string">
+  Search query (for workspace scope)
+  
+  Example: `"handleClick"` finds all symbols matching pattern
+</ParamField>
+
+<ParamField path="limit" type="number">
+  Max symbols to return (default: 50)
+</ParamField>
+
+<ResponseField name="output" type="string">
+  Symbol list with kind and location
+  
+  Example:
+  ```
+  function processData /workspace/src/utils.ts:15:0
+  class UserService /workspace/src/services.ts:42:0
+  interface ApiResponse /workspace/src/types.ts:8:0
+  ```
+</ResponseField>
+
+**Example**:
+
+```typescript
+// Get document outline
+lsp_symbols({
+  filePath: "/workspace/src/utils.ts",
+  scope: "document"
+})
+
+// Search workspace for symbol
+lsp_symbols({
+  filePath: "/workspace/src/utils.ts",
+  scope: "workspace",
+  query: "Config",
+  limit: 20
+})
+```
+
+**Source**: `symbols-tool.ts`
+
+---
+
+### lsp_diagnostics
+
+Get errors, warnings, and hints from language server BEFORE running build.
+
+<ParamField path="filePath" type="string" required>
+  Absolute path to file
+</ParamField>
+
+<ParamField path="severity" type="enum">
+  Filter by severity: `"error"` | `"warning"` | `"information"` | `"hint"` | `"all"`
+  
+  Default: `"all"`
+</ParamField>
+
+<ResponseField name="output" type="string">
+  Diagnostics list with severity, line, and message
+  
+  Example:
+  ```
+  error [15:10]: Cannot find name 'processData'
+  warning [42:5]: Unused variable 'result'
+  ```
+  
+  If more than 50 diagnostics (configurable), shows:
+  ```
+  Found 75 diagnostics (showing first 50):
+  ...
+  ```
+</ResponseField>
+
+**Example**:
+
+```typescript
+// Get all diagnostics
+lsp_diagnostics({
+  filePath: "/workspace/src/utils.ts"
+})
+
+// Get only errors
+lsp_diagnostics({
+  filePath: "/workspace/src/utils.ts",
+  severity: "error"
+})
+```
+
+**Source**: `diagnostics-tool.ts:8`
+
+**Configuration**: `DEFAULT_MAX_DIAGNOSTICS = 50` in `constants.ts`
+
+---
+
+### lsp_prepare_rename
+
+Validate if rename is possible before applying. Use BEFORE `lsp_rename`.
+
+<ParamField path="filePath" type="string" required>
+  Absolute path to file
+</ParamField>
+
+<ParamField path="line" type="number" required>
+  Line number (1-based)
+</ParamField>
+
+<ParamField path="character" type="number" required>
+  Column position (0-based)
+</ParamField>
+
+<ResponseField name="output" type="string">
+  Validation result
+  
+  Success:
+  ```
+  Rename allowed: "oldName" at 42:5-42:12
+  ```
+  
+  Failure:
+  ```
+  Rename not allowed at this location
+  ```
+</ResponseField>
+
+**Example**:
+
+```typescript
+lsp_prepare_rename({
+  filePath: "/workspace/src/utils.ts",
+  line: 15,
+  character: 10
+})
+// → "Rename allowed: \"processData\" at 15:10-15:21"
+```
+
+**Source**: `rename-tools.ts:8`
+
+---
+
+### lsp_rename
+
+Rename symbol across entire workspace. **APPLIES changes to all files**.
+
+<ParamField path="filePath" type="string" required>
+  Absolute path to file
+</ParamField>
+
+<ParamField path="line" type="number" required>
+  Line number (1-based)
+</ParamField>
+
+<ParamField path="character" type="number" required>
+  Column position (0-based)
+</ParamField>
+
+<ParamField path="newName" type="string" required>
+  New symbol name
+</ParamField>
+
+<ResponseField name="output" type="string">
+  Rename result with file changes
+  
+  Success:
+  ```
+  Renamed "processData" to "handleData" in 5 files:
+  - /workspace/src/utils.ts (3 changes)
+  - /workspace/src/processor.ts (1 change)
+  - /workspace/tests/utils.test.ts (2 changes)
+  ```
+  
+  No changes:
+  ```
+  No changes required
+  ```
+</ResponseField>
+
+**Example**:
+
+```typescript
+// 1. Validate rename first
+lsp_prepare_rename({
+  filePath: "/workspace/src/utils.ts",
+  line: 15,
+  character: 10
+})
+
+// 2. Apply rename
+lsp_rename({
+  filePath: "/workspace/src/utils.ts",
+  line: 15,
+  character: 10,
+  newName: "handleData"
+})
+```
+
+**Source**: `rename-tools.ts:32`
+
+## Server Resolution
+
+LSP servers are resolved using:
+
+1. **Custom config**: `.opencode/lsp.json` (user overrides)
+2. **Built-in definitions**: 40+ servers synced from OpenCode's `server.ts`
+3. **Language mappings**: File extension → language ID → server
+
+**Server Config Example** (`.opencode/lsp.json`):
+
+```json
+{
+  "typescript": {
+    "command": ["typescript-language-server", "--stdio"],
+    "rootPatterns": ["tsconfig.json", "package.json"]
+  },
+  "python": {
+    "command": ["pylsp"],
+    "rootPatterns": ["pyproject.toml", "setup.py"]
+  }
+}
+```
+
+## Supported Languages
+
+40+ languages with built-in server definitions:
+
+- **JavaScript/TypeScript**: `typescript-language-server`
+- **Python**: `pylsp`, `pyright`
+- **Go**: `gopls`
+- **Rust**: `rust-analyzer`
+- **Java**: `jdtls`
+- **C/C++**: `clangd`
+- **Ruby**: `solargraph`
+- **PHP**: `intelephense`
+- **...and many more**
+
+See `server-definitions.ts` for complete list.
+
+## File Lifecycle
+
+LSP requires files to be "opened" before requests:
+
+```typescript
+// Internal flow (automatic)
+LSPClient.openFile(filePath)
+  → didOpen notification sent
+  → 1s delay for server initialization
+  → LSP request (definition/references/etc.)
+```
+
+The tool handles this automatically — you don't need to manually open files.
+
+## Error Handling
+
+Common errors and solutions:
+
+### Server Not Found
+
+```
+LSP server not found for language: typescript
+Install with: npm install -g typescript-language-server
+```
+
+**Fix**: Install the required language server binary.
+
+### Server Crashed
+
+```
+LSP server process exited with code 1
+```
+
+**Debug**: Check `/tmp/oh-my-opencode.log` for server stderr output.
+
+### No Symbol at Position
+
+```
+No definition found
+```
+
+**Causes**:
+- Position is not on a symbol
+- Symbol is built-in (no source location)
+- Language server doesn't support the feature
+
+## Process Management
+
+LSP servers are spawned per language and cleaned up on exit:
+
+- **Process cleanup**: `lsp-manager-process-cleanup.ts` reaps orphan processes
+- **Temp directory cleanup**: `lsp-manager-temp-directory-cleanup.ts` removes temp files
+
+## Implementation Details
+
+### Key Files
+
+| File | Purpose |
+|------|----------|
+| `lsp-client-wrapper.ts` | High-level entry: resolve server, open file, run request |
+| `lsp-client.ts` | File tracking, document sync (`didOpen`/`didChange`) |
+| `lsp-client-connection.ts` | JSON-RPC request/response/notification layer |
+| `lsp-client-transport.ts` | stdin/stdout byte-stream framing |
+| `lsp-process.ts` | Spawn + cleanup of LSP server process |
+| `server-definitions.ts` | 40+ builtin servers synced from OpenCode |
+| `server-resolution.ts` | Resolve which server handles a file extension |
+| `lsp-formatters.ts` | Format LSP responses into human-readable strings |
+| `workspace-edit.ts` | Apply `WorkspaceEdit` results to disk (for rename) |
+
+### Server Initialization
+
+```typescript
+// lsp-process.ts
+export class LSPProcess {
+  async start(config: LSPServerConfig, rootPath: string): Promise<void> {
+    this.process = spawn(config.command[0], config.command.slice(1))
+    // Send initialize request
+    // Wait for initialized notification
+  }
+}
+```
+
+### Response Formatting
+
+```typescript
+// lsp-formatters.ts
+export function formatLocation(loc: Location): string {
+  return `${loc.uri.replace('file://', '')}:${loc.range.start.line}:${loc.range.start.character}`
+}
+
+export function formatDiagnostic(diag: Diagnostic): string {
+  const severity = ['error', 'warning', 'information', 'hint'][diag.severity - 1]
+  return `${severity} [${diag.range.start.line}:${diag.range.start.character}]: ${diag.message}`
+}
+```
+
+## Related Tools
+
+- **ast_grep_search**: AST-aware pattern search (alternative to workspace symbols)
+- **grep**: Regex search (simpler than LSP for some queries)
+- **hashline_edit**: Safe editing (complement to LSP rename)
+
+## Best Practices
+
+### ✅ Do
+
+- **Use `lsp_prepare_rename` before `lsp_rename`** to validate
+- **Filter diagnostics by severity** for focused error fixing
+- **Use workspace symbols** for cross-file symbol search
+- **Check `/tmp/oh-my-opencode.log`** for debugging server issues
+
+### ❌ Don't
+
+- **Don't rename without preparation** — validate first
+- **Don't assume all servers support all features** — some only provide diagnostics
+- **Don't use for simple text search** — use `grep` or `ast_grep` for pattern matching

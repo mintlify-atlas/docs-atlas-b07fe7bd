@@ -1,0 +1,416 @@
+---
+title: Lifecycle Hooks
+description: 46 lifecycle hooks across 3 tiers for extending Oh My OpenCode behavior
+---
+
+Oh My OpenCode provides 46 lifecycle hooks organized into three tiers: Core (37), Continuation (7), and Skill (2). All hooks follow the factory pattern `createXXXHook(deps) → HookFunction`.
+
+## Hook Tiers
+
+Hooks are composed in three layers:
+
+<CardGroup cols={3}>
+  <Card title="Core Hooks" icon="layer-group">
+    37 hooks: Session (23), Tool Guard (10), Transform (4)
+  </Card>
+  <Card title="Continuation Hooks" icon="arrows-rotate">
+    7 hooks for background tasks and boulder sessions
+  </Card>
+  <Card title="Skill Hooks" icon="wand-magic-sparkles">
+    2 hooks for skill system integration
+  </Card>
+</CardGroup>
+
+## Hook Events
+
+Hooks attach to OpenCode events:
+
+- `chat.message` - First message in session
+- `chat.params` - Model parameters before API call
+- `event` - Session lifecycle (created, deleted, idle, error)
+- `tool.execute.before` - Before tool execution
+- `tool.execute.after` - After tool execution
+- `experimental.chat.messages.transform` - Message transformation
+
+## Session Hooks (23)
+
+Defined in `src/plugin/hooks/create-session-hooks.ts`
+
+<Accordion title="Context Management (5)">
+
+### context-window-monitor
+**Event:** `session.idle`  
+**Purpose:** Track context window usage percentage and warn when approaching limits
+
+```typescript
+// Monitors token usage per session
+// Warns at 75%, 85%, 95% thresholds
+```
+
+### preemptive-compaction
+**Event:** `session.idle`  
+**Purpose:** Trigger compaction before hitting hard context limit  
+**Config:** Requires `experimental.preemptive_compaction: true`
+
+### anthropic-context-window-limit-recovery
+**Event:** `session.error`  
+**Purpose:** Multi-strategy recovery (truncation, compaction, summarization) when hitting context limits
+
+**Files:** 31 files, ~2232 LOC
+
+### compaction-context-injector
+**Event:** `session.compacted`  
+**Purpose:** Re-inject AGENTS.md/README.md after compaction
+
+### compaction-todo-preserver
+**Event:** `session.compacted`  
+**Purpose:** Preserve todo items through compaction process
+
+</Accordion>
+
+<Accordion title="Model & Runtime (5)">
+
+### think-mode
+**Event:** `chat.params`  
+**Purpose:** Dynamic thinking budget adjustment based on task complexity  
+**Switches:** Extended thinking mode for complex tasks
+
+### model-fallback
+**Event:** `chat.params`  
+**Purpose:** Provider-level model fallback on API errors  
+**Chain:** Claude → OpenAI → Gemini → Copilot → OpenCode Zen → Z.ai → Kimi
+
+### runtime-fallback
+**Event:** `event`  
+**Purpose:** Auto-switch models on API provider errors
+
+### anthropic-effort
+**Event:** `chat.params`  
+**Purpose:** Adjust Anthropic reasoning effort level
+
+### no-sisyphus-gpt
+**Event:** `chat.message`  
+**Purpose:** Block Sisyphus from using GPT models (shows toast warning)
+
+### no-hephaestus-non-gpt
+**Event:** `chat.message`  
+**Purpose:** Block Hephaestus from using non-GPT models
+
+</Accordion>
+
+<Accordion title="Session Recovery (3)">
+
+### session-recovery
+**Event:** `session.error`  
+**Purpose:** Auto-recover from crashes and API errors  
+**Strategies:** Empty content recovery, thinking block order fix, tool result missing
+
+**Files:** 30 files, ~1800 LOC
+
+### edit-error-recovery
+**Event:** `tool.execute.after`  
+**Purpose:** Retry failed file edits with corrected parameters
+
+### json-error-recovery
+**Event:** `tool.execute.after`  
+**Purpose:** Detect JSON parse errors, inject correction reminder
+
+</Accordion>
+
+<Accordion title="Task Management (6)">
+
+### todo-continuation-enforcer
+**Event:** `session.idle`  
+**Purpose:** **Boulder mechanism** - forces agent to continue when todos remain incomplete  
+**Behavior:** 2s countdown toast → continuation injection  
+**Backoff:** Exponential backoff: 30s base, ×2 per failure, max 5 consecutive failures then 5min pause
+
+**Files:** 13 files, ~2061 LOC
+
+### atlas
+**Event:** `event`  
+**Purpose:** Master orchestrator for boulder/background sessions  
+**Gates:** Session type → abort check → failure count → background tasks → agent match → plan completeness → cooldown (5s)
+
+**Files:** 17 files, ~1976 LOC
+
+### unstable-agent-babysitter
+**Event:** `session.idle`  
+**Purpose:** Monitor unstable agent behavior across sessions
+
+### delegate-task-retry
+**Event:** `tool.execute.after`  
+**Purpose:** Retry failed task delegations
+
+### task-resume-info
+**Event:** `chat.message`  
+**Purpose:** Inject task context when resuming cancelled tasks
+
+### tasks-todowrite-disabler
+**Event:** `tool.execute.before`  
+**Purpose:** Disable TodoWrite when new task system is active
+
+</Accordion>
+
+<Accordion title="Developer Experience (9)">
+
+### session-notification
+**Event:** `session.idle`  
+**Purpose:** OS notifications on session completion  
+**Config:** `notification.force_enable` to override external plugins
+
+### background-notification
+**Event:** `event`  
+**Purpose:** Background task completion notifications
+
+### auto-update-checker
+**Event:** `session.created`  
+**Purpose:** Check npm for plugin updates  
+**Files:** Checks weekly, shows toast on new version
+
+### agent-usage-reminder
+**Event:** `chat.message`  
+**Purpose:** Remind about available specialized agents
+
+### start-work
+**Event:** `chat.message`  
+**Purpose:** `/start-work` command handler for Sisyphus work sessions
+
+### ralph-loop
+**Event:** `event`  
+**Purpose:** Self-referential dev loop via `/ralph-loop` command  
+**State:** Persisted in `.sisyphus/ralph-loop.local.md`  
+**Completion:** Detects `<promise>DONE</promise>` in AI output  
+**Limit:** Max 100 iterations (default)
+
+**Files:** 14 files, ~1687 LOC
+
+### non-interactive-env
+**Event:** `chat.message`  
+**Purpose:** Adjust behavior for non-TTY environments (`run` command)
+
+### interactive-bash-session
+**Event:** `tool.execute`  
+**Purpose:** Tmux session management for interactive tools
+
+### question-label-truncator
+**Event:** `tool.execute.before`  
+**Purpose:** Auto-truncate long question labels to prevent context bloat
+
+</Accordion>
+
+<Accordion title="Content & Prompts (5)">
+
+### keyword-detector
+**Event:** `messages.transform`  
+**Purpose:** Detect modes from user input: ultrawork, search, analyze, prove-yourself  
+**Behavior:** Injects mode-specific system prompts
+
+**Files:** ~1665 LOC
+
+### rules-injector
+**Event:** `tool.execute.before`  
+**Purpose:** Conditional rules injection from AGENTS.md, config, skill rules  
+**Evaluation:** Evaluates conditions to determine which rules apply
+
+**Files:** 19 files, ~1604 LOC
+
+### prometheus-md-only
+**Event:** `tool.execute.before`  
+**Purpose:** Enforce .md-only writes for Prometheus agent (planner read-only mode)
+
+### sisyphus-junior-notepad
+**Event:** `chat.message`  
+**Purpose:** Notepad injection for Sisyphus Junior subagents
+
+### thinking-block-validator
+**Event:** `messages.transform`  
+**Purpose:** Validate thinking block structure and placement
+
+</Accordion>
+
+## Tool Guard Hooks (10)
+
+Defined in `src/plugin/hooks/create-tool-guard-hooks.ts`
+
+<Accordion title="File Safety (3)">
+
+### write-existing-file-guard
+**Event:** `tool.execute.before`  
+**Purpose:** Require Read before Write on existing files  
+**Prevents:** Overwriting files without reading them first
+
+Location: `src/hooks/write-existing-file-guard/`
+
+### comment-checker
+**Event:** `tool.execute.after`  
+**Purpose:** Block AI-generated comment patterns ("slop prevention")  
+**Detects:** Generic comments like "Initialize variables", "Helper function", etc.
+
+```typescript
+// Blocked patterns:
+// - "Initialize variables"
+// - "Helper function to..."
+// - "This function does X"
+// Uses AST-based detection
+```
+
+Location: `src/hooks/comment-checker/`
+
+### hashline-read-enhancer
+**Event:** `tool.execute.after`  
+**Purpose:** Enhance Read output with line hashes for precise editing  
+**Format:** Adds content-based hashes to each line
+
+</Accordion>
+
+<Accordion title="Output Processing (3)">
+
+### tool-output-truncator
+**Event:** `tool.execute.after`  
+**Purpose:** Truncate oversized tool output to prevent context bloat  
+**Limits:** 2000 lines or 51200 bytes per tool call
+
+Location: `src/hooks/tool-output-truncator.ts`
+
+### empty-task-response-detector
+**Event:** `tool.execute.after`  
+**Purpose:** Detect empty or failed task responses  
+**Action:** Injects retry prompt
+
+Location: `src/hooks/empty-task-response-detector.ts`
+
+### json-error-recovery
+**Event:** `tool.execute.after`  
+**Purpose:** Detect JSON parse errors, inject correction reminder
+
+</Accordion>
+
+<Accordion title="Context Injection (4)">
+
+### directory-agents-injector
+**Event:** `tool.execute.before`  
+**Purpose:** Auto-inject directory AGENTS.md files into context  
+**Behavior:** Searches up directory tree for AGENTS.md
+
+### directory-readme-injector
+**Event:** `tool.execute.before`  
+**Purpose:** Auto-inject directory README.md files into context  
+**Behavior:** Injects README.md from current/parent directories
+
+### context-injector-messages-transform
+**Event:** `messages.transform`  
+**Purpose:** Inject AGENTS.md/README.md into message context
+
+### rules-injector
+**Event:** `tool.execute.before`  
+**Purpose:** Conditional rules from AGENTS.md, config, skills
+
+</Accordion>
+
+## Transform Hooks (4)
+
+Defined in `src/plugin/hooks/create-transform-hooks.ts`
+
+### claude-code-hooks
+**Event:** `messages.transform`  
+**Purpose:** Claude Code settings.json compatibility layer  
+**Maps:** Settings → plugin behavior
+
+Location: `src/hooks/claude-code-hooks/` - See AGENTS.md for full mapping
+
+### keyword-detector
+**Event:** `messages.transform`  
+**Purpose:** Detect ultrawork/search/analyze/prove-yourself modes  
+**Action:** Inject mode-specific system prompts
+
+### context-injector
+**Event:** `messages.transform`  
+**Purpose:** Inject AGENTS.md/README.md into context
+
+### thinking-block-validator
+**Event:** `messages.transform`  
+**Purpose:** Validate `<thinking>` block structure and order
+
+## Skill Hooks (2)
+
+Defined in `src/plugin/hooks/create-skill-hooks.ts`
+
+### category-skill-reminder
+**Event:** `chat.message`  
+**Purpose:** Remind about category + skill delegation patterns  
+**Example:** "For browser tasks, use agent-browser skill"
+
+### auto-slash-command
+**Event:** `chat.message`  
+**Purpose:** Auto-detect `/command` patterns in user input  
+**Behavior:** Maps to registered slash commands
+
+## Hook Composition
+
+Hooks are composed in three factory files:
+
+```typescript
+// src/plugin/hooks/create-core-hooks.ts
+createSessionHooks()      // 23 hooks
+  + createToolGuardHooks()  // 10 hooks
+  + createTransformHooks()  // 4 hooks
+  = 37 core hooks
+
+// src/plugin/hooks/create-continuation-hooks.ts
+7 continuation hooks
+
+// src/plugin/hooks/create-skill-hooks.ts
+2 skill hooks
+
+// Total: 46 hooks
+```
+
+## Configuration
+
+Enable/disable hooks in `oh-my-opencode.jsonc`:
+
+```jsonc
+{
+  "disabled_hooks": [
+    "todo-continuation-enforcer",  // Disable boulder
+    "session-notification",        // Disable OS notifications
+    "comment-checker"              // Disable slop prevention
+  ]
+}
+```
+
+## Creating Custom Hooks
+
+1. Create `src/hooks/{name}/index.ts` with factory:
+
+```typescript
+export function createMyHook(ctx: PluginContext) {
+  return {
+    'event.name': async (input, output) => {
+      // Hook logic
+    }
+  }
+}
+```
+
+2. Register in appropriate tier (`create-*-hooks.ts`)
+3. Add to `src/config/schema/hooks.ts` HookNameSchema
+
+## Source Files
+
+- **Hook Definitions:** `src/hooks/` (39 directories + 6 standalone files)
+- **Hook Composition:** `src/plugin/hooks/create-*-hooks.ts`
+- **Hook Handlers:** `src/plugin/*.ts` (8 OpenCode hook handlers)
+- **Schema:** `src/config/schema/hooks.ts` (HookNameSchema)
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Skills" href="/api/features/skills">
+    Skill system and built-in skills
+  </Card>
+  <Card title="Tools" href="/api/tools">
+    26 tools that hooks can modify
+  </Card>
+</CardGroup>

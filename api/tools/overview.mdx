@@ -1,0 +1,209 @@
+---
+title: Tools Overview
+description: Complete reference for Oh My OpenCode's 26 tools across 15 categories
+---
+
+## Overview
+
+Oh My OpenCode extends OpenCode with 26 specialized tools across 15 categories. Tools are registered via `createToolRegistry()` and follow two patterns:
+
+- **Factory functions** (`createXXXTool`): 19 tools that require context/dependencies
+- **Direct ToolDefinition**: 7 tools (LSP + interactive_bash) with static definitions
+
+## Tool Categories
+
+### Task Management (4 tools)
+
+Manage tasks with dependencies, metadata, and lifecycle tracking.
+
+| Tool | Factory | Description |
+|------|---------|-------------|
+| `task_create` | `createTaskCreateTool` | Create new task with dependencies |
+| `task_list` | `createTaskList` | List all active tasks |
+| `task_get` | `createTaskGetTool` | Get task details by ID |
+| `task_update` | `createTaskUpdateTool` | Update task status/metadata |
+
+### Delegation (1 tool)
+
+Delegate work to specialized agents with category-based model selection.
+
+| Tool | Description |
+|------|-------------|
+| `task` | Spawn agent task with category or direct agent selection |
+
+**Categories**: `visual-engineering`, `ultrabrain`, `deep`, `artistry`, `quick`, `unspecified-low`, `unspecified-high`, `writing`
+
+See [delegate-task](/api/tools/delegate-task) for detailed documentation.
+
+### Agent Invocation (1 tool)
+
+| Tool | Description |
+|------|-------------|
+| `call_omo_agent` | Direct agent invocation without category system |
+
+### Background Tasks (2 tools)
+
+Manage async agent execution with polling and cancellation.
+
+| Tool | Description |
+|------|-------------|
+| `background_output` | Fetch results from running/completed background task |
+| `background_cancel` | Cancel running task(s) |
+
+See [background-task](/api/tools/background-task) for detailed documentation.
+
+### LSP Refactoring (6 tools)
+
+Language Server Protocol integration for code intelligence.
+
+| Tool | Description |
+|------|-------------|
+| `lsp_goto_definition` | Jump to symbol definition |
+| `lsp_find_references` | Find all symbol usages |
+| `lsp_symbols` | Document outline or workspace symbols |
+| `lsp_diagnostics` | Get errors/warnings before build |
+| `lsp_prepare_rename` | Validate rename operation |
+| `lsp_rename` | Safe cross-workspace rename |
+
+See [lsp-tools](/api/tools/lsp-tools) for detailed documentation.
+
+### Code Search (4 tools)
+
+AST-aware and regex-based code search with pattern matching.
+
+| Tool | Description |
+|------|-------------|
+| `ast_grep_search` | AST-aware pattern search (25 languages) |
+| `ast_grep_replace` | AST-aware code rewriting |
+| `grep` | Regex content search (60s timeout, 10MB limit) |
+| `glob` | File pattern matching (60s timeout, 100 file limit) |
+
+See [ast-grep](/api/tools/ast-grep) for detailed documentation.
+
+### Session History (4 tools)
+
+Query and navigate conversation history.
+
+| Tool | Description |
+|------|-------------|
+| `session_list` | List all sessions |
+| `session_read` | Read session messages |
+| `session_search` | Search session content |
+| `session_info` | Get session metadata |
+
+### Skill/Command (2 tools)
+
+Load specialized skills and MCP integrations.
+
+| Tool | Description |
+|------|-------------|
+| `skill` | Load built-in skill by name |
+| `skill_mcp` | Invoke MCP tool/resource/prompt |
+
+### System (2 tools)
+
+System interaction and multimodal capabilities.
+
+| Tool | Description |
+|------|-------------|
+| `interactive_bash` | Interactive tmux session management |
+| `look_at` | Vision model analysis of images/screenshots |
+
+### Editing (1 tool)
+
+Hash-anchored file editing with stale-line detection.
+
+| Tool | Description |
+|------|-------------|
+| `hashline_edit` | Safe file editing using LINE#ID validation |
+
+See [hashline-edit](/api/tools/hashline-edit) for detailed documentation.
+
+## Tool Registry
+
+Tools are registered in `src/plugin/tool-registry.ts`:
+
+```typescript
+import { createToolRegistry } from "@opencode-ai/plugin"
+import { builtinTools } from "../tools"
+import { createHashlineEditTool } from "../tools/hashline-edit"
+import { createAstGrepTools } from "../tools/ast-grep"
+
+export function createTools(ctx: PluginInput): Record<string, ToolDefinition> {
+  return {
+    ...builtinTools,
+    hashline_edit: createHashlineEditTool(),
+    ...createAstGrepTools(ctx),
+    ...createBackgroundTools(manager, client),
+    task: createDelegateTask(options),
+    // ... other tools
+  }
+}
+```
+
+## Adding a New Tool
+
+1. Create `src/tools/{name}/index.ts` exporting factory
+2. Create `src/tools/{name}/types.ts` for parameter schemas
+3. Create `src/tools/{name}/tools.ts` for implementation
+4. Register in `src/plugin/tool-registry.ts`
+
+### Example Structure
+
+```typescript
+// src/tools/my-tool/tools.ts
+import { tool, type ToolDefinition } from "@opencode-ai/plugin/tool"
+
+export function createMyTool(): ToolDefinition {
+  return tool({
+    description: "What this tool does",
+    args: {
+      param1: tool.schema.string().describe("Parameter description"),
+      param2: tool.schema.number().optional(),
+    },
+    execute: async (args, context) => {
+      // Implementation
+      return "result"
+    },
+  })
+}
+```
+
+## Tool Execution Lifecycle
+
+Tools participate in the hook system with pre/post execution hooks:
+
+```
+tool.execute.before hooks
+  ↓
+Tool execution
+  ↓
+tool.execute.after hooks
+```
+
+### Available Hooks
+
+**Before Hooks**: `commentChecker`, `rulesInjector`, `writeExistingFileGuard`, `hashlineReadEnhancer`
+
+**After Hooks**: `outputTruncation`, `metadataStore`, `labelTruncator`
+
+See `/api/hooks` for hook documentation.
+
+## Configuration
+
+Tools can be disabled via config:
+
+```jsonc
+// .opencode/oh-my-opencode.jsonc
+{
+  "disabled_tools": ["hashline_edit", "lsp_rename"]
+}
+```
+
+## Source Location
+
+All tool implementations: `~/workspace/source/src/tools/`
+
+- Each tool has its own directory
+- Common pattern: `index.ts` (exports), `tools.ts` (implementation), `types.ts` (schemas)
+- Test files co-located: `*.test.ts`

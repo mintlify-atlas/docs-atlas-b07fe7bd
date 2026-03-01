@@ -1,0 +1,596 @@
+---
+title: "Plugin Development"
+description: "Understand the plugin architecture, extend the tool registry, and integrate with OpenCode's plugin system"
+---
+
+Oh My OpenCode is an OpenCode plugin that extends the base editor with agents, hooks, tools, and orchestration capabilities. This guide covers the plugin interface and extension points.
+
+## Plugin Architecture
+
+The plugin follows a four-phase initialization:
+
+```typescript
+// src/index.ts
+const OhMyOpenCodePlugin: Plugin = async (ctx) => {
+  // Phase 1: Load configuration
+  const pluginConfig = loadPluginConfig(ctx.directory, ctx)
+
+  // Phase 2: Create managers
+  const managers = createManagers({
+    ctx,
+    pluginConfig,
+    tmuxConfig,
+    modelCacheState
+  })
+
+  // Phase 3: Create tools
+  const toolsResult = await createTools({
+    ctx,
+    pluginConfig,
+    managers
+  })
+
+  // Phase 4: Create hooks
+  const hooks = createHooks({
+    ctx,
+    pluginConfig,
+    modelCacheState,
+    backgroundManager: managers.backgroundManager,
+    isHookEnabled,
+    safeHookEnabled,
+    mergedSkills: toolsResult.mergedSkills,
+    availableSkills: toolsResult.availableSkills
+  })
+
+  // Phase 5: Assemble plugin interface
+  return createPluginInterface({
+    ctx,
+    pluginConfig,
+    managers,
+    hooks,
+    tools: toolsResult.filteredTools
+  })
+}
+
+export default OhMyOpenCodePlugin
+```
+
+**Source**: `src/index.ts:16`
+
+## PluginContext
+
+The OpenCode plugin context provides core APIs:
+
+```typescript
+interface PluginContext {
+  directory: string                    // Working directory
+  client: PluginClient                 // API client
+  logger: Logger                       // Plugin logger
+}
+
+interface PluginClient {
+  session: SessionAPI                  // Session management
+  tui: TuiAPI                          // UI notifications/toasts
+  provider: ProviderAPI                // Model provider access
+}
+```
+
+**Source**: `src/plugin/types.ts`
+
+## Plugin Interface
+
+The plugin interface defines 8 OpenCode hook handlers:
+
+```typescript
+interface PluginInterface {
+  config: ConfigHandler                                    // 6-phase config pipeline
+  tool: ToolsRecord                                        // 26 tools
+  "chat.message": ChatMessageHandler                      // First-message variant, setup
+  "chat.params": ChatParamsHandler                        // Model params adjustment
+  event: EventHandler                                      // Session lifecycle
+  "tool.execute.before": ToolExecuteBeforeHandler         // Pre-tool guards
+  "tool.execute.after": ToolExecuteAfterHandler           // Post-tool modifications
+  "experimental.chat.messages.transform": TransformHandler // Message transformation
+  "experimental.session.compacting"?: CompactionHandler    // Context compaction
+}
+```
+
+**Source**: `src/plugin/types.ts`
+
+## Creating Custom Tools
+
+Tools follow the factory pattern `createXXXTool() → ToolDefinition`.
+
+<Steps>
+
+### Define Tool Types
+
+Create `src/tools/my-tool/types.ts`:
+
+```typescript
+import { z } from "zod"
+
+export const MyToolArgsSchema = z.object({
+  input: z.string().describe("Input to process"),
+  options: z.object({
+    verbose: z.boolean().optional().describe("Verbose output")
+  }).optional()
+})
+
+export type MyToolArgs = z.infer<typeof MyToolArgsSchema>
+```
+
+### Implement Tool Logic
+
+Create `src/tools/my-tool/tools.ts`:
+
+```typescript
+import type { ToolDefinition } from "@opencode-ai/plugin"
+import type { PluginContext } from "../../plugin/types"
+import { MyToolArgsSchema, type MyToolArgs } from "./types"
+import { log } from "../../shared"
+
+export function createMyTool(ctx: PluginContext): ToolDefinition {
+  return {
+    name: "my_tool",
+    description: "Process input and return result",
+    input_schema: MyToolArgsSchema,
+    execute: async (args: MyToolArgs) => {
+      log("my_tool: executing", { input: args.input })
+
+      try {
+        const result = await processInput(args.input, args.options)
+        return {
+          content: result,
+          metadata: {
+            timestamp: new Date().toISOString(),
+            verbose: args.options?.verbose ?? false
+          }
+        }
+      } catch (error) {
+        return {
+          error: `Tool execution failed: ${error.message}`,
+          isError: true
+        }
+      }
+    }
+  }
+}
+
+async function processInput(
+  input: string,
+  options?: { verbose?: boolean }
+): Promise<string> {
+  // Implementation
+  return `Processed: ${input}`
+}
+```
+
+### Export Tool
+
+Create `src/tools/my-tool/index.ts`:
+
+```typescript
+export { createMyTool } from "./tools"
+export type * from "./types"
+```
+
+### Register in Tool Registry
+
+Add to `src/plugin/tool-registry.ts`:
+
+```typescript
+import { createMyTool } from "../tools/my-tool"
+
+export function createToolRegistry(args: {
+  ctx: PluginContext
+  pluginConfig: OhMyOpenCodeConfig
+  managers: Managers
+  skillContext: SkillContext
+  availableCategories: AvailableCategory[]
+}): ToolRegistryResult {
+  const { ctx, pluginConfig } = args
+
+  const allTools: Record<string, ToolDefinition> = {
+    // ... existing tools
+    my_tool: createMyTool(ctx)
+  }
+
+  const filteredTools = filterDisabledTools(allTools, pluginConfig.disabled_tools)
+
+  return { filteredTools, taskSystemEnabled }
+}
+```
+
+</Steps>
+
+**Source**: `src/plugin/tool-registry.ts:41`
+
+## Tool Registry Structure
+
+The tool registry assembles tools from factories:
+
+```typescript
+const allTools: Record<string, ToolDefinition> = {
+  // File operations (built-in from @opencode-ai/plugin)
+  ...builtinTools,
+
+  // Search tools
+  ...createGrepTools(ctx),
+  ...createGlobTools(ctx),
+  ...createAstGrepTools(ctx),
+
+  // Session management
+  ...createSessionManagerTools(ctx),
+
+  // Background tasks
+  ...createBackgroundTools(managers.backgroundManager, ctx.client),
+
+  // Delegation
+  call_omo_agent: createCallOmoAgent(ctx, managers.backgroundManager, pluginConfig.disabled_agents),
+  task: createDelegateTask({ manager: managers.backgroundManager, /* ... */ }),
+
+  // Skills
+  skill_mcp: createSkillMcpTool({ manager: managers.skillMcpManager, /* ... */ }),
+  skill: createSkillTool({ commands, skills: mergedSkills, /* ... */ }),
+
+  // System
+  interactive_bash,
+  look_at: createLookAt(ctx),
+
+  // Task system (conditional)
+  ...taskToolsRecord,
+
+  // Editing (conditional)
+  ...hashlineToolsRecord
+}
+```
+
+**Source**: `src/plugin/tool-registry.ts:121`
+
+## Manager System
+
+Managers handle stateful subsystems:
+
+```typescript
+export interface Managers {
+  backgroundManager: BackgroundManager        // Background task orchestration
+  tmuxSessionManager: TmuxSessionManager      // Terminal multiplexing
+  skillMcpManager: SkillMcpManager            // Skill MCP lifecycle
+  configHandler: ConfigHandler                // Dynamic config loading
+}
+
+export function createManagers(args: {
+  ctx: PluginContext
+  pluginConfig: OhMyOpenCodeConfig
+  tmuxConfig: TmuxConfig
+  modelCacheState: ModelCacheState
+  backgroundNotificationHookEnabled: boolean
+}): Managers {
+  const backgroundManager = createBackgroundManager({
+    client: args.ctx.client,
+    directory: args.ctx.directory,
+    maxConcurrentPerModel: args.pluginConfig.background?.max_concurrent_per_model ?? 5,
+    notificationEnabled: args.backgroundNotificationHookEnabled
+  })
+
+  const tmuxSessionManager = createTmuxSessionManager({
+    ctx: args.ctx,
+    config: args.tmuxConfig,
+    backgroundManager
+  })
+
+  const skillMcpManager = createSkillMcpManager({
+    ctx: args.ctx
+  })
+
+  const configHandler = createConfigHandler({
+    ctx: args.ctx,
+    pluginConfig: args.pluginConfig,
+    modelCacheState: args.modelCacheState
+  })
+
+  return {
+    backgroundManager,
+    tmuxSessionManager,
+    skillMcpManager,
+    configHandler
+  }
+}
+```
+
+**Source**: `src/create-managers.ts`
+
+## Config Handler
+
+The config handler implements a 6-phase config pipeline:
+
+```typescript
+interface ConfigHandler {
+  (phase: ConfigPhase): Promise<ConfigResult>
+}
+
+type ConfigPhase =
+  | "provider"           // Model provider configuration
+  | "plugin-components"  // Plugin metadata
+  | "agents"             // Agent registry
+  | "tools"              // Tool availability
+  | "mcps"               // MCP server list
+  | "commands"           // Slash command discovery
+```
+
+**Implementation**:
+
+```typescript
+export function createConfigHandler(args: {
+  ctx: PluginContext
+  pluginConfig: OhMyOpenCodeConfig
+  modelCacheState: ModelCacheState
+}): ConfigHandler {
+  return async (phase: ConfigPhase) => {
+    switch (phase) {
+      case "provider":
+        return handleProviderPhase(args)
+      case "plugin-components":
+        return handlePluginComponentsPhase(args)
+      case "agents":
+        return handleAgentsPhase(args)
+      case "tools":
+        return handleToolsPhase(args)
+      case "mcps":
+        return handleMcpsPhase(args)
+      case "commands":
+        return handleCommandsPhase(args)
+      default:
+        return { success: false, error: "Unknown phase" }
+    }
+  }
+}
+```
+
+**Source**: Referenced in `src/plugin-interface.ts`
+
+## Hook System Integration
+
+Hooks are composed and wired to the plugin interface:
+
+```typescript
+function createPluginInterface(args: {
+  ctx: PluginContext
+  pluginConfig: OhMyOpenCodeConfig
+  managers: Managers
+  hooks: CreatedHooks
+  tools: ToolsRecord
+}): PluginInterface {
+  return {
+    config: managers.configHandler,
+    tool: args.tools,
+
+    "chat.message": createChatMessageHandler(args),
+    "chat.params": createChatParamsHandler(args),
+    event: createEventHandler(args),
+    "tool.execute.before": createToolExecuteBeforeHandler(args),
+    "tool.execute.after": createToolExecuteAfterHandler(args),
+    "experimental.chat.messages.transform": createTransformHandler(args),
+
+    "experimental.session.compacting": async (input, output) => {
+      await args.hooks.compactionTodoPreserver?.capture(input.sessionID)
+      await args.hooks.claudeCodeHooks?.["experimental.session.compacting"]?.(input, output)
+      if (args.hooks.compactionContextInjector) {
+        output.context.push(args.hooks.compactionContextInjector(input.sessionID))
+      }
+    }
+  }
+}
+```
+
+**Source**: `src/plugin-interface.ts` and `src/index.ts:76`
+
+## Tool Execution Lifecycle
+
+Tool execution flows through hooks:
+
+```
+1. Agent requests tool
+2. tool.execute.before hooks (guards, validation, injection)
+3. Tool execution (createXXXTool().execute())
+4. tool.execute.after hooks (truncation, validation, metadata)
+5. Result returned to agent
+```
+
+### Before Hook Pattern
+
+```typescript
+"tool.execute.before": async (
+  input: {
+    toolName: string
+    arguments: Record<string, unknown>
+    sessionID: string
+  },
+  output: {
+    proceed: boolean        // Set to false to block execution
+    error?: string          // Error message if blocked
+    modifiedArgs?: unknown  // Replace arguments
+  }
+) => {
+  // Validation logic
+  if (shouldBlock(input)) {
+    output.proceed = false
+    output.error = "Blocked due to validation failure"
+  }
+}
+```
+
+### After Hook Pattern
+
+```typescript
+"tool.execute.after": async (
+  input: {
+    toolName: string
+    arguments: Record<string, unknown>
+    result: unknown
+    sessionID: string
+  },
+  output: {
+    modifiedResult?: unknown  // Replace tool result
+  }
+) => {
+  // Result transformation
+  if (needsModification(input.result)) {
+    output.modifiedResult = transform(input.result)
+  }
+}
+```
+
+## Disabling Tools
+
+Tools can be disabled via configuration:
+
+```jsonc
+{
+  "disabled_tools": ["my_tool", "another_tool"]
+}
+```
+
+The `filterDisabledTools()` function removes disabled tools:
+
+```typescript
+import { filterDisabledTools } from "../shared/disabled-tools"
+
+const filteredTools = filterDisabledTools(allTools, pluginConfig.disabled_tools)
+```
+
+## Testing Tools
+
+Test tool factories and execution:
+
+```typescript
+import { describe, test, expect } from "bun:test"
+import { createMyTool } from "./tools"
+
+describe("createMyTool", () => {
+  const mockCtx: PluginContext = {
+    directory: "/test",
+    client: {} as PluginClient,
+    logger: console
+  }
+
+  describe("#given valid input", () => {
+    describe("#when execute is called", () => {
+      test("#then returns processed result", async () => {
+        const tool = createMyTool(mockCtx)
+        const result = await tool.execute({ input: "test" })
+
+        expect(result.content).toBe("Processed: test")
+        expect(result.metadata.timestamp).toBeDefined()
+      })
+    })
+  })
+
+  describe("#given execution error", () => {
+    test("#then returns error result", async () => {
+      const tool = createMyTool(mockCtx)
+      const result = await tool.execute({ input: "" })
+
+      expect(result.isError).toBe(true)
+      expect(result.error).toContain("failed")
+    })
+  })
+})
+```
+
+## Plugin State
+
+Manage plugin-wide state:
+
+```typescript
+import { createModelCacheState } from "./plugin-state"
+
+const modelCacheState = createModelCacheState()
+
+// Store session model
+modelCacheState.set(sessionID, {
+  providerID: "anthropic",
+  modelID: "claude-opus-4-6",
+  variant: "extended"
+})
+
+// Retrieve session model
+const cached = modelCacheState.get(sessionID)
+```
+
+**Source**: `src/plugin-state.ts`
+
+## Logging
+
+Use the shared logger:
+
+```typescript
+import { log } from "./shared"
+
+log("my-tool: processing input", {
+  input: args.input,
+  sessionID: ctx.sessionID
+})
+```
+
+**Output**: Logs to `/tmp/oh-my-opencode.log`
+
+## Error Handling
+
+Follow error handling conventions:
+
+```typescript
+try {
+  const result = await riskyOperation()
+  return { content: result }
+} catch (error) {
+  log("my-tool: operation failed", { error: error.message })
+  return {
+    error: `Operation failed: ${error.message}`,
+    isError: true
+  }
+}
+```
+
+**Anti-pattern**: Never use empty catch blocks:
+
+```typescript
+// WRONG
+try {
+  await operation()
+} catch (e) {}
+
+// CORRECT
+try {
+  await operation()
+} catch (error) {
+  log("operation failed", { error })
+  // Handle or rethrow
+}
+```
+
+## Plugin Build Pipeline
+
+Build the plugin:
+
+```bash
+bun run build
+```
+
+**Output**:
+- `dist/index.js` — ESM bundle
+- `dist/index.d.ts` — TypeScript declarations
+- `dist/schema.json` — Configuration schema
+
+**Build Configuration**: `tsconfig.json`, `bun.build.ts`
+
+## Related Files
+
+- **Plugin Entry**: `src/index.ts`
+- **Plugin Interface**: `src/plugin-interface.ts`
+- **Tool Registry**: `src/plugin/tool-registry.ts`
+- **Manager Creation**: `src/create-managers.ts`
+- **Hook Composition**: `src/create-hooks.ts`
+- **Plugin Types**: `src/plugin/types.ts`
+- **Config Handler**: `src/plugin-handlers/`

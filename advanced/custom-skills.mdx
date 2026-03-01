@@ -1,0 +1,400 @@
+---
+title: "Creating Custom Skills"
+description: "Build custom skills to extend agent capabilities with domain-specific instructions and embedded MCPs"
+---
+
+Skills are reusable instruction sets that can be loaded into agents via the `load_skills` parameter. They support YAML frontmatter configuration, markdown content, and embedded MCP server definitions.
+
+## Skill Anatomy
+
+A skill is a `.md` file with YAML frontmatter:
+
+```markdown
+---
+name: github-triage
+description: "Unified GitHub triage for issues AND PRs. Triggers: 'triage', 'triage issues'"
+mcp_servers:
+  - name: github-api
+    type: stdio
+    command: node
+    args: ["./github-mcp-server.js"]
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+---
+
+# GitHub Triage — Unified Issue & PR Processor
+
+<role>
+You are a GitHub triage orchestrator...
+</role>
+```
+
+### Frontmatter Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Skill identifier (kebab-case) |
+| `description` | string | Yes | Brief skill description for agent selection |
+| `mcp_servers` | array | No | Embedded MCP server definitions |
+| `permissions` | object | No | Tool restrictions for this skill |
+| `category` | string | No | Suggested delegation category |
+
+## File Structure
+
+Place skills in `.opencode/skills/` directory:
+
+```
+project/
+├── .opencode/
+│   └── skills/
+│       ├── github-triage/
+│       │   ├── SKILL.md
+│       │   └── github-mcp-server.js
+│       └── database-migration/
+│           └── SKILL.md
+└── oh-my-opencode.jsonc
+```
+
+## Loading Skills
+
+Skills are loaded via the `task` tool's `load_skills` parameter:
+
+```typescript
+task({
+  category: "free",
+  run_in_background: true,
+  load_skills: ["github-triage"],
+  description: "Triage all open issues",
+  prompt: "Process all open issues in the current repository"
+})
+```
+
+## Embedded MCP Servers
+
+Skills can bundle MCP servers that become available when the skill is loaded.
+
+### MCP Configuration Schema
+
+```yaml
+mcp_servers:
+  - name: custom-api          # Unique identifier
+    type: stdio               # stdio | http
+    command: node             # Executable (stdio only)
+    args: ["server.js"]       # Command arguments
+    env:                      # Environment variables
+      API_KEY: "${API_KEY}"   # ${VAR} for env expansion
+    url: "https://..."        # HTTP endpoint (http type)
+```
+
+### Stdio MCP Example
+
+```markdown
+---
+name: database-tools
+description: "PostgreSQL query and migration tools"
+mcp_servers:
+  - name: postgres-mcp
+    type: stdio
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-postgres"]
+    env:
+      DATABASE_URL: "${DATABASE_URL}"
+---
+
+# Database Tools
+
+Use the `skill_mcp` tool to access PostgreSQL:
+
+```typescript
+skill_mcp({
+  mcp_name: "postgres-mcp",
+  tool_name: "query",
+  arguments: { sql: "SELECT * FROM users LIMIT 10" }
+})
+```
+```
+
+### HTTP MCP Example
+
+```yaml
+mcp_servers:
+  - name: web-search
+    type: http
+    url: "https://api.example.com/mcp"
+    env:
+      AUTH_TOKEN: "${SEARCH_API_KEY}"
+```
+
+## Permission Management
+
+Restrict tool access within skills using the `permissions` field:
+
+```yaml
+---
+name: read-only-analyzer
+description: "Code analysis without modifications"
+permissions:
+  write: deny
+  edit: deny
+  apply_patch: deny
+  task: deny
+---
+```
+
+Permission values:
+- `allow`: Explicitly allow (default)
+- `deny`: Block tool usage
+
+## Skill Content Patterns
+
+### Role Definition
+
+```markdown
+<role>
+You are a [specific role]. You [core responsibility].
+</role>
+```
+
+### Phase-Based Workflows
+
+```markdown
+## PHASE 1: FETCH DATA
+
+{`<fetch>`}
+Run these commands:
+
+```bash
+gh issue list --state open --limit 500
+```
+{`</fetch>`}
+
+## PHASE 2: CLASSIFY
+
+{`<classification>`}
+| Type | Detection | Action |
+|------|-----------|--------|
+| BUG | Title contains `[Bug]` | SUBAGENT_BUG |
+{`</classification>`}
+```
+
+### Prompt Templates
+
+Provide explicit subagent instructions:
+
+```markdown
+### SUBAGENT_BUG_ANALYZER
+
+```
+You are analyzing bug report #{number}.
+
+YOUR JOB:
+1. Read the issue carefully
+2. Search the codebase for relevant code
+3. Determine outcome:
+
+OUTCOME A — CONFIRMED BUG:
+  Step 1: Post comment starting with [bot]
+  Step 2: Report back with:
+    ACTION: CONFIRMED_BUG
+    ROOT_CAUSE: [file:line description]
+    FIX_APPROACH: [specific changes needed]
+```
+```
+
+## Built-in Skill Examples
+
+From the source repository:
+
+### github-triage Skill
+
+**Location**: `.opencode/skills/github-triage/SKILL.md`
+
+**Features**:
+- Parallel background task spawning (1 task per issue/PR)
+- Uses `category="free"` for cost-effective processing
+- Structured prompt templates for each issue type
+- Result tracking via `TaskCreate`/`TaskUpdate`
+
+**Key Pattern** — Parallel Processing:
+
+```typescript
+// For each item, spawn background task
+for (const item of items) {
+  TaskCreate(subject=`Triage: #{item.number}`)
+  task({
+    category: "free",
+    run_in_background: true,
+    load_skills: [],
+    description: `Process ${item.type} #${item.number}`,
+    prompt: buildSubagentPrompt(item)
+  })
+}
+
+// Poll for results
+for (const taskId of taskIds) {
+  const result = await background_output(task_id=taskId)
+  TaskUpdate(id=taskId, status="completed", description=result)
+}
+```
+
+## Skill Discovery
+
+Oh My OpenCode discovers skills from:
+
+1. **Project skills**: `.opencode/skills/*/SKILL.md`
+2. **Built-in skills**: Bundled with the plugin
+3. **Config registration**: `oh-my-opencode.jsonc`
+
+### Registering External Skills
+
+```jsonc
+{
+  "skills": {
+    "external-skill": "/path/to/external/SKILL.md"
+  }
+}
+```
+
+## Skill Resolver
+
+The `skill-resolver.ts` module handles skill loading:
+
+```typescript
+import { resolveMultipleSkills } from "../features/opencode-skill-loader/skill-content"
+
+const { resolved } = resolveMultipleSkills(
+  ["github-triage", "database-tools"],
+  { gitMasterConfig, browserProvider, disabledSkills }
+)
+
+const skillContent = Array.from(resolved.values()).join("\n\n")
+```
+
+**Source**: `src/features/opencode-skill-loader/skill-content.ts`
+
+## Best Practices
+
+<Steps>
+
+### Define Clear Roles
+
+Start skills with explicit role definitions:
+
+```markdown
+<role>
+You are a [specific specialist]. You [core function]. You do NOT [boundaries].
+</role>
+```
+
+### Use Phase-Based Structure
+
+Break complex workflows into numbered phases:
+
+1. **PHASE 1**: Data collection
+2. **PHASE 2**: Classification
+3. **PHASE 3**: Execution
+4. **PHASE 4**: Result aggregation
+
+### Provide Exhaustive Instructions
+
+Free/weak models need explicit step-by-step instructions:
+
+```markdown
+IF YES (condition met):
+  Step A: Do X
+  Step B: Run command: `cmd`
+  Step C: Report back with EXACT format:
+    ACTION: COMPLETED
+    SUMMARY: [description]
+```
+
+### Mandate Output Formats
+
+Specify exact response structures:
+
+```markdown
+Report back with:
+  ACTION: [ENUM_VALUE]
+  FIELD_1: [description]
+  FIELD_2: [value]
+```
+
+### Include Anti-Patterns
+
+Explicitly forbid problematic behaviors:
+
+```markdown
+## ANTI-PATTERNS
+
+| Violation | Severity |
+|-----------|----------|
+| Using wrong category | CRITICAL |
+| Skipping validation | HIGH |
+```
+
+</Steps>
+
+## MCP Lifecycle
+
+The `SkillMcpManager` handles embedded MCP servers:
+
+**Source**: `src/features/skill-mcp-manager/index.ts`
+
+```typescript
+// Automatic lifecycle
+1. Skill loaded → MCP servers started
+2. Agent uses skill_mcp tool → Routes to MCP
+3. Session ends → MCP servers stopped
+```
+
+### Accessing MCP Tools
+
+```typescript
+skill_mcp({
+  mcp_name: "postgres-mcp",     // From skill's mcp_servers[].name
+  tool_name: "query",            // MCP tool name
+  arguments: { sql: "..." }      // Tool-specific args
+})
+```
+
+## Environment Variables
+
+Use `${VAR}` syntax in MCP configurations:
+
+```yaml
+env:
+  API_KEY: "${MY_API_KEY}"      # Expands from process.env
+  DB_URL: "${DATABASE_URL}"
+```
+
+Variables are expanded at MCP server startup.
+
+## Disabling Skills
+
+Disable skills globally via config:
+
+```jsonc
+{
+  "disabled_skills": ["github-triage", "expensive-skill"]
+}
+```
+
+## Testing Skills
+
+Test skills in isolation using the `skill` tool:
+
+```typescript
+skill({
+  name: "github-triage",
+  user_message: "Triage issues in anomalyco/opencode"
+})
+```
+
+This loads the skill into the current session without delegation.
+
+## Related Files
+
+- **Skill Loader**: `src/features/opencode-skill-loader/skill-content.ts`
+- **MCP Manager**: `src/features/skill-mcp-manager/index.ts`
+- **Skill Tool**: `src/tools/skill/tools.ts`
+- **Agent Builder**: `src/agents/agent-builder.ts` (skill injection)

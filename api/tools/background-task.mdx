@@ -1,0 +1,462 @@
+---
+title: Background Task Tools
+description: Launch and manage asynchronous agent execution with polling and cancellation
+---
+
+## Overview
+
+Background task tools enable launching agents asynchronously and polling their results. This allows parallel exploration, multi-agent orchestration, and non-blocking execution.
+
+**Source**: `src/tools/background-task/`
+
+## Architecture
+
+Tools provide LLM-facing interface to background execution engine:
+
+```
+Tool Layer (background_output, background_cancel)
+  ↓
+BackgroundManager (features/background-agent/)
+  ↓
+Task execution, polling, lifecycle management
+```
+
+## Tools
+
+### background_output
+
+Fetch results from running or completed background task.
+
+<ParamField path="task_id" type="string" required>
+  Task ID returned from `task()` with `run_in_background=true`
+  
+  Example: `"bg-task-1234567890"`
+</ParamField>
+
+<ParamField path="block" type="boolean">
+  Wait for completion (default: `false`)
+  
+  - `false`: Check status immediately, return current state
+  - `true`: Poll until task completes or timeout
+  
+  **Note**: System auto-notifies on completion, so blocking rarely needed.
+</ParamField>
+
+<ParamField path="timeout" type="number">
+  Max wait time in milliseconds (default: `60000`, max: `600000`)
+  
+  Only applies when `block=true`.
+</ParamField>
+
+<ParamField path="full_session" type="boolean">
+  Return full session transcript (default: `true`)
+  
+  - `true`: All messages with filters applied
+  - `false`: Summary status only
+</ParamField>
+
+<ParamField path="include_thinking" type="boolean">
+  Include thinking/reasoning blocks (default: `false`)
+  
+  Auto-enabled for active tasks.
+</ParamField>
+
+<ParamField path="message_limit" type="number">
+  Max messages to return (capped at 100)
+  
+  Example: `message_limit: 10` returns last 10 messages.
+</ParamField>
+
+<ParamField path="since_message_id" type="string">
+  Return messages after this message ID (exclusive)
+  
+  For incremental polling: track last seen message ID.
+</ParamField>
+
+<ParamField path="include_tool_results" type="boolean">
+  Include tool results in output (default: `false`)
+  
+  Auto-enabled for active tasks.
+</ParamField>
+
+<ParamField path="thinking_max_chars" type="number">
+  Max characters for thinking content (default: `2000`)
+  
+  Truncates long reasoning blocks.
+</ParamField>
+
+<ResponseField name="output" type="string">
+  Task result or status
+  
+  **Completed task** (full_session=true):
+  ```
+  Task: Explore codebase patterns
+  Status: completed
+  Agent: explore
+  
+  Messages:
+  
+  [Assistant]
+  I'll search for pattern usage in the codebase.
+  
+  [Tool: ast_grep_search]
+  ...
+  
+  [Assistant]
+  Found 15 matches across 8 files. Here's a summary:
+  ...
+  ```
+  
+  **Running task** (block=false):
+  ```
+  Task: Research documentation
+  Status: running
+  Agent: librarian
+  Progress: Searching external docs...
+  ```
+  
+  **Error state**:
+  ```
+  Task: Fix type errors
+  Status: error
+  Error: Model API returned 500 error
+  ```
+</ResponseField>
+
+**Examples**:
+
+```typescript
+// Check task status immediately
+background_output({
+  task_id: "bg-task-1234567890",
+  block: false
+})
+
+// Wait for completion with timeout
+background_output({
+  task_id: "bg-task-1234567890",
+  block: true,
+  timeout: 120000  // 2 minutes
+})
+
+// Get last 5 messages only
+background_output({
+  task_id: "bg-task-1234567890",
+  full_session: true,
+  message_limit: 5
+})
+
+// Incremental polling (get new messages)
+background_output({
+  task_id: "bg-task-1234567890",
+  since_message_id: "msg-42"
+})
+
+// Include thinking blocks (for debugging)
+background_output({
+  task_id: "bg-task-1234567890",
+  include_thinking: true,
+  thinking_max_chars: 5000
+})
+```
+
+**Source**: `create-background-output.ts:44`
+
+---
+
+### background_cancel
+
+Cancel running background task(s).
+
+<ParamField path="taskId" type="string">
+  Task ID to cancel
+  
+  Mutually exclusive with `all`.
+</ParamField>
+
+<ParamField path="all" type="boolean">
+  Cancel all running tasks (default: `false`)
+  
+  Mutually exclusive with `taskId`.
+</ParamField>
+
+<ResponseField name="output" type="string">
+  Cancellation result
+  
+  Single task:
+  ```
+  Cancelled task: bg-task-1234567890
+  ```
+  
+  All tasks:
+  ```
+  Cancelled 3 tasks
+  ```
+  
+  Not found:
+  ```
+  Task not found: bg-task-invalid
+  ```
+</ResponseField>
+
+**Examples**:
+
+```typescript
+// Cancel specific task
+background_cancel({
+  taskId: "bg-task-1234567890"
+})
+
+// Cancel all running tasks
+background_cancel({
+  all: true
+})
+```
+
+**Source**: `create-background-cancel.ts`
+
+## Usage Patterns
+
+### Launch and Poll
+
+```typescript
+// 1. Launch background task
+const result = task({
+  category: "quick",
+  load_skills: [],
+  description: "Fix import errors",
+  prompt: "Fix all import errors in src/utils.ts",
+  run_in_background: true
+})
+// → "Task ID: bg-task-1234567890\nStatus: running\n..."
+
+// 2. System notifies when complete (automatic)
+// OR manually poll:
+background_output({
+  task_id: "bg-task-1234567890",
+  block: false
+})
+```
+
+### Parallel Exploration
+
+```typescript
+// Launch multiple agents in parallel
+const task1 = task({
+  subagent_type: "explore",
+  load_skills: [],
+  description: "Find React patterns",
+  prompt: "Search for React component patterns",
+  run_in_background: true
+})
+
+const task2 = task({
+  subagent_type: "librarian",
+  load_skills: [],
+  description: "Research React docs",
+  prompt: "Find React hooks best practices",
+  run_in_background: true
+})
+
+// Poll both
+background_output({ task_id: "<task1_id>" })
+background_output({ task_id: "<task2_id>" })
+```
+
+### Incremental Result Fetching
+
+```typescript
+let lastMessageId = null
+
+while (true) {
+  const result = background_output({
+    task_id: "bg-task-1234567890",
+    since_message_id: lastMessageId,
+    full_session: true
+  })
+  
+  // Process new messages
+  // Extract last message ID from result
+  // lastMessageId = ...
+  
+  if (taskCompleted) break
+  
+  await delay(5000)  // Poll every 5s
+}
+```
+
+### Timeout Handling
+
+```typescript
+background_output({
+  task_id: "bg-task-1234567890",
+  block: true,
+  timeout: 30000  // 30s timeout
+})
+// If timeout:
+// → "Task is still running; showing latest available output.\n\n> Timed out waiting after 30000ms."
+```
+
+## Task Lifecycle
+
+Background tasks go through these states:
+
+1. **pending**: Task created, session starting
+2. **running**: Session active, agent executing
+3. **completed**: Session idle, agent finished
+4. **error**: Execution failed
+5. **cancelled**: User cancelled
+6. **interrupt**: System interrupted (e.g., parent cancelled)
+
+## Concurrency Limits
+
+BackgroundManager enforces per-model concurrency limits (default: 5):
+
+```typescript
+// Config: .opencode/oh-my-opencode.jsonc
+{
+  "background_concurrency_limit": 5  // Max 5 concurrent tasks per model/provider
+}
+```
+
+When limit reached, new tasks queue until slot available.
+
+## Output Formatting
+
+Results formatted for LLM consumption:
+
+- **Task metadata**: Agent, category, description, status
+- **Messages**: Role, content, thinking blocks (optional)
+- **Tool results**: Truncated if `include_tool_results=false`
+- **Timestamps**: Human-readable durations
+
+**Example output**:
+
+```
+Task: Explore React patterns
+Status: completed
+Agent: explore
+Category: quick
+Duration: 45s
+
+Messages:
+
+[Assistant]
+I'll search for React component patterns in the codebase.
+
+[Tool: ast_grep_search]
+Found 12 matches...
+
+[Assistant]
+Here's a summary of the React patterns I found:
+
+1. Functional components with hooks (8 files)
+2. Custom hooks (4 files)
+3. Context providers (2 files)
+
+Key observations:
+- Most components use TypeScript
+- Hooks follow naming convention (use*)
+- Consistent file structure
+```
+
+## Error Handling
+
+### Task Not Found
+
+```
+Task not found: bg-task-invalid
+```
+
+**Cause**: Task ID incorrect or task deleted.
+
+### Task Deleted During Polling
+
+```
+Task was deleted: bg-task-1234567890
+```
+
+**Cause**: BackgroundManager cleaned up task (e.g., session ended).
+
+### Session Start Timeout
+
+```
+Task entered error state.
+
+Task ID: bg-task-1234567890
+```
+
+**Cause**: Session failed to start within 30s.
+
+## Implementation Details
+
+### Key Files
+
+| File | Purpose |
+|------|----------|
+| `create-background-output.ts:44` | `background_output` tool implementation |
+| `create-background-cancel.ts` | `background_cancel` tool implementation |
+| `full-session-format.ts` | Format full session transcript |
+| `task-result-format.ts` | Format task result |
+| `task-status-format.ts` | Format task status |
+| `session-messages.ts` | Fetch session messages from OpenCode |
+| `clients.ts` | Client interfaces for BackgroundManager |
+
+### Session Message Fetching
+
+```typescript
+// session-messages.ts
+export async function fetchSessionMessages(
+  client: BackgroundOutputClient,
+  sessionId: string,
+  options?: {
+    includeThinking?: boolean
+    messageLimit?: number
+    sinceMessageId?: string
+    includeToolResults?: boolean
+  }
+): Promise<Message[]> {
+  const messages = await client.getMessages({ sessionId, ...options })
+  return messages
+}
+```
+
+### Status Polling
+
+```typescript
+// create-background-output.ts (simplified)
+if (shouldBlock && isTaskActiveStatus(task.status)) {
+  const startTime = Date.now()
+  while (Date.now() - startTime < timeoutMs) {
+    await delay(1000)  // Poll every 1s
+    
+    const currentTask = manager.getTask(task_id)
+    if (!isTaskActiveStatus(currentTask.status)) {
+      break  // Task completed
+    }
+  }
+}
+```
+
+## Related Tools
+
+- **task**: Launch agents (sync or background)
+- **call_omo_agent**: Direct agent invocation (also supports background)
+- **session_read**: Read completed session history
+
+## Best Practices
+
+### ✅ Do
+
+- **Use `run_in_background=true`** only for parallel exploration
+- **Let system notify** on completion (don't poll aggressively)
+- **Use `since_message_id`** for incremental fetching
+- **Set reasonable timeouts** (default 60s is usually sufficient)
+- **Cancel abandoned tasks** to free resources
+
+### ❌ Don't
+
+- **Don't poll every second** — system notifies automatically
+- **Don't use background for sequential work** — use sync mode
+- **Don't ignore timeout errors** — task may still be running
+- **Don't leak task IDs** — track and cancel when no longer needed

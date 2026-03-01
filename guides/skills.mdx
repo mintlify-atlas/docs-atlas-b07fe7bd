@@ -1,0 +1,856 @@
+---
+title: 'Skills System'
+description: 'Using built-in skills, creating custom skills, and skill-embedded MCPs'
+icon: 'wand-magic-sparkles'
+---
+
+## What are Skills?
+
+Skills provide **specialized workflows** with embedded MCP servers and detailed instructions. A skill injects domain-specific knowledge (context) and tools (MCP) into agents.
+
+<Tip>
+**Skill = Knowledge + Tools**
+
+While categories determine *how* an agent thinks, skills determine *what* it knows and *what tools* it has.
+</Tip>
+
+## Built-in Skills
+
+### git-master
+
+**Triggers:** commit, rebase, squash, "who wrote", "when was X added"  
+**Model:** Inherits from agent  
+
+**Three specializations:**
+
+<Tabs>
+<Tab title="Commit Architect">
+
+**Focus:** Atomic commits with intelligent splitting
+
+**Core principle:**
+```
+3+ files → MUST be 2+ commits
+5+ files → MUST be 3+ commits
+10+ files → MUST be 5+ commits
+```
+
+**Features:**
+- Automatic commit style detection (semantic, plain, short)
+- Language detection (Korean/English)
+- Dependency ordering (tests after implementation)
+- Atomic commit splitting by concern
+
+**Example:**
+```bash
+/git-master commit these changes
+```
+
+**Output:**
+```bash
+git add src/models/user.ts
+git commit -m "feat: add user model with validation"
+
+git add src/services/user.ts
+git commit -m "feat: implement user service"
+
+git add tests/user.test.ts
+git commit -m "test: add user service tests"
+```
+
+</Tab>
+
+<Tab title="Rebase Surgeon">
+
+**Focus:** History rewriting and branch cleanup
+
+**Features:**
+- Interactive rebase planning
+- Conflict resolution strategies
+- Squash commit guidance
+- Branch cleanup workflows
+
+**Example:**
+```bash
+/git-master rebase onto main
+```
+
+**Output:**
+```bash
+# Analysis of commits to rebase
+# Strategy: squash fixup commits, preserve features
+
+git rebase -i main
+# Plan:
+# pick abc123 feat: add authentication
+# squash def456 fixup: typo in auth
+# pick ghi789 feat: add user dashboard
+```
+
+</Tab>
+
+<Tab title="History Archaeologist">
+
+**Focus:** Finding when/where changes were introduced
+
+**Features:**
+- Git blame analysis
+- Bisect strategies for finding breaking changes
+- History search across branches
+- Author and date tracking
+
+**Example:**
+```bash
+/git-master who wrote the authentication code?
+```
+
+**Output:**
+```bash
+git log --all --source --full-history -S"authentication" --pretty=format:"%h %an %ad %s"
+
+# Found:
+# abc123 Alice 2026-01-15 feat: add OAuth authentication
+# def456 Bob   2026-01-20 refactor: improve auth error handling
+# ghi789 Alice 2026-02-01 fix: auth token expiration bug
+```
+
+</Tab>
+</Tabs>
+
+**Style detection example:**
+
+```bash
+# Analyzes last 30 commits:
+Detected style: SEMANTIC (Korean)
+- 22/30 commits use feat:/fix:/chore: prefix
+- 18/30 commits in Korean
+
+# Generated commits follow detected pattern:
+feat: 사용자 모델 추가
+test: 사용자 서비스 테스트 추가
+```
+
+### playwright
+
+**Default browser automation skill**  
+**MCP:** `@playwright/mcp@latest`  
+**Triggers:** Browser tasks, testing, screenshots
+
+**Capabilities:**
+- Navigate and interact with web pages
+- Take screenshots and PDFs
+- Fill forms and click elements
+- Wait for network requests
+- Scrape content
+
+**Example:**
+```bash
+/playwright Navigate to example.com and take a screenshot
+```
+
+**Behind the scenes:**
+```typescript
+// Skill loads MCP server
+mcp:
+  playwright:
+    command: npx
+    args: ["@playwright/mcp@latest"]
+
+// Agent can now use playwright_* tools
+```
+
+<Warning>
+**MUST USE** for any browser-related tasks—verification, browsing, web scraping, testing, screenshots.
+</Warning>
+
+### frontend-ui-ux
+
+**Designer-turned-developer persona**  
+**No MCP required**  
+**Triggers:** UI/UX tasks, styling
+
+**Design process:**
+1. **Purpose**: What problem does this solve?
+2. **Tone**: Pick extreme—brutalist, maximalist, retro-futuristic, luxury, playful
+3. **Constraints**: Technical requirements
+4. **Differentiation**: The ONE memorable thing
+
+**Aesthetic guidelines:**
+
+<AccordionGroup>
+<Accordion title="Typography" icon="text">
+Choose distinctive fonts.
+
+**Avoid:** Arial, Inter, Roboto, system fonts, Space Grotesk
+
+**Use:** Characterful display font + refined body font
+</Accordion>
+
+<Accordion title="Color" icon="palette">
+Commit to cohesive palette with CSS variables.
+
+Dominant colors + sharp accents > evenly-distributed palettes
+
+**Avoid:** Purple gradients on white (AI slop)
+</Accordion>
+
+<Accordion title="Motion" icon="arrows-spin">
+Focus on high-impact moments.
+
+- Staggered reveals with `animation-delay`
+- Scroll-triggering effects
+- Surprising hover states
+- Prioritize CSS-only, use Motion library for React when needed
+</Accordion>
+
+<Accordion title="Spatial Composition" icon="layer-group">
+Unexpected layouts:
+- Asymmetry, overlap, diagonal flow
+- Grid-breaking elements
+- Generous negative space OR controlled density
+</Accordion>
+</AccordionGroup>
+
+**Anti-patterns:**
+- Generic fonts (Inter, Roboto, Arial)
+- Cliched color schemes
+- Predictable layouts
+- Cookie-cutter design
+
+**Example:**
+```typescript
+task(
+  category="visual-engineering",
+  load_skills=["frontend-ui-ux"],
+  prompt="Create a landing page hero section with bold typography and smooth scroll animations"
+)
+```
+
+## Browser Automation Options
+
+Three providers available, configured via `browser_automation_engine.provider`:
+
+<Tabs>
+<Tab title="playwright (Default)">
+
+**MCP-based, no installation required**
+
+```yaml
+mcp:
+  playwright:
+    command: npx
+    args: ["@playwright/mcp@latest"]
+```
+
+**Usage:**
+```bash
+/playwright Navigate to example.com and extract the main heading
+```
+
+**Auto-loaded** when browser tasks detected.
+
+</Tab>
+
+<Tab title="agent-browser">
+
+**Vercel's agent-browser CLI**
+
+**Installation:**
+```bash
+bun add -g agent-browser
+agent-browser install
+```
+
+**Configuration:**
+```json
+{
+  "browser_automation_engine": {
+    "provider": "agent-browser"
+  }
+}
+```
+
+**Usage:**
+```bash
+Use agent-browser to navigate to example.com and extract data
+```
+
+</Tab>
+
+<Tab title="playwright-cli">
+
+**Bash-based Playwright CLI wrapper**
+
+**Configuration:**
+```json
+{
+  "browser_automation_engine": {
+    "provider": "playwright-cli"
+  }
+}
+```
+
+**Usage:**
+```bash
+Use playwright-cli to take a screenshot of example.com
+```
+
+</Tab>
+</Tabs>
+
+## Creating Custom Skills
+
+Skills are loaded from these locations (priority order):
+
+1. `.opencode/skills/*/SKILL.md` (project, OpenCode native)
+2. `~/.config/opencode/skills/*/SKILL.md` (user, OpenCode native)
+3. `.claude/skills/*/SKILL.md` (project, Claude Code compat)
+4. `.agents/skills/*/SKILL.md` (project, Agents convention)
+5. `~/.agents/skills/*/SKILL.md` (user, Agents convention)
+
+Same-named skill at higher priority overrides lower.
+
+### Basic Skill
+
+**File:** `.opencode/skills/my-skill/SKILL.md`
+
+```markdown
+---
+name: my-skill
+description: "Custom skill for my project"
+---
+
+# My Custom Skill
+
+This content will be injected into the agent's system prompt.
+
+## Guidelines
+
+- Specific instruction 1
+- Specific instruction 2
+- Pattern to follow from codebase
+
+## Examples
+
+\`\`\`typescript
+// Example code showing the pattern
+\`\`\`
+
+## Anti-Patterns
+
+- Never do X
+- Avoid Y
+```
+
+### Skill with MCP
+
+**File:** `.opencode/skills/api-client/SKILL.md`
+
+```markdown
+---
+name: api-client
+description: "Internal API client with authentication"
+mcp:
+  internal-api:
+    command: node
+    args: ["./scripts/api-mcp-server.js"]
+---
+
+# Internal API Client Skill
+
+You have access to our internal API via the `internal-api` MCP server.
+
+## Available Operations
+
+Use the `skill_mcp` tool to invoke API operations:
+
+```typescript
+skill_mcp(
+  server_name="internal-api",
+  operation="get_user",
+  params={ user_id: 123 }
+)
+```
+
+## Authentication
+
+All requests are automatically authenticated using the MCP server's credentials.
+
+## Rate Limits
+
+- 100 requests/minute per operation
+- Use caching when possible
+```
+
+### Skill with OAuth MCP
+
+**File:** `.opencode/skills/external-service/SKILL.md`
+
+```markdown
+---
+name: external-service
+description: "OAuth-protected external service"
+mcp:
+  external-api:
+    url: https://api.example.com/mcp
+    oauth:
+      clientId: ${EXTERNAL_SERVICE_CLIENT_ID}
+      scopes: ["read", "write"]
+---
+
+# External Service Skill
+
+Access to external service API with OAuth 2.1 authentication.
+
+## Pre-authentication
+
+Authenticate before first use:
+
+```bash
+bunx oh-my-opencode mcp oauth login external-api \
+  --server-url https://api.example.com
+```
+
+## Usage
+
+```typescript
+skill_mcp(
+  server_name="external-api",
+  operation="fetch_data",
+  params={ query: "search term" }
+)
+```
+
+## Auto-features
+
+- **Auto-discovery:** Fetches OAuth config from `/.well-known/oauth-protected-resource`
+- **Dynamic Client Registration:** If server supports RFC 7591
+- **PKCE:** Mandatory for security
+- **Token refresh:** Automatic on 401
+- **Step-up auth:** Handles 403 with `WWW-Authenticate`
+```
+
+**Environment variables:**
+
+```bash
+# .env
+EXTERNAL_SERVICE_CLIENT_ID=your-client-id
+```
+
+Variables in `${VAR}` format are expanded automatically.
+
+## Using Skills
+
+### Method 1: Load with task()
+
+```typescript
+task(
+  category="deep",
+  load_skills=["my-skill", "api-client"],
+  prompt="Use the API client to fetch user data and process it"
+)
+```
+
+Skills are injected into the subagent's system prompt before execution.
+
+### Method 2: Use skill tool
+
+```typescript
+skill(name="my-skill")
+// Returns skill content with context applied
+```
+
+Useful for retrieving skill instructions without spawning an agent.
+
+### Method 3: Load via agent config
+
+```json
+{
+  "agents": {
+    "sisyphus": {
+      "skills": ["git-master", "my-skill"]
+    }
+  }
+}
+```
+
+Skills are always loaded for that agent.
+
+## Skill MCP Management
+
+Skills can bring their own MCP servers. The `skill_mcp` tool invokes operations.
+
+### Basic Usage
+
+```typescript
+// Discover available operations
+skill_mcp(server_name="playwright", operation="list_tools")
+
+// Invoke operation
+skill_mcp(
+  server_name="playwright",
+  operation="navigate",
+  params={ url: "https://example.com" }
+)
+```
+
+### MCP Server Types
+
+<Tabs>
+<Tab title="stdio (Local)">
+
+**Definition:**
+```yaml
+mcp:
+  my-server:
+    command: node
+    args: ["./server.js"]
+    env:
+      API_KEY: ${MY_API_KEY}
+```
+
+**Lifecycle:**
+- Started on first use
+- One process per session
+- Terminated when session ends
+
+</Tab>
+
+<Tab title="HTTP (Remote)">
+
+**Definition:**
+```yaml
+mcp:
+  remote-server:
+    url: https://api.example.com/mcp
+```
+
+**Lifecycle:**
+- No process spawning
+- Direct HTTP requests
+- Stateless
+
+</Tab>
+
+<Tab title="OAuth (Remote + Auth)">
+
+**Definition:**
+```yaml
+mcp:
+  oauth-server:
+    url: https://api.example.com/mcp
+    oauth:
+      clientId: ${CLIENT_ID}
+      scopes: ["read", "write"]
+```
+
+**Lifecycle:**
+- OAuth flow on first use
+- Tokens cached in `~/.config/opencode/mcp-oauth.json` (chmod 0600)
+- Auto-refresh on 401
+- Step-up auth on 403
+
+**Pre-authenticate:**
+```bash
+bunx oh-my-opencode mcp oauth login oauth-server \
+  --server-url https://api.example.com \
+  --client-id ${CLIENT_ID} \
+  --scopes "read,write"
+```
+
+</Tab>
+</Tabs>
+
+## Configuration
+
+### Disable Built-in Skills
+
+```json
+{
+  "disabled_skills": ["playwright"]
+}
+```
+
+### Custom Skill Sources
+
+```json
+{
+  "skills": {
+    "sources": [
+      { 
+        "path": "./custom-skills", 
+        "recursive": true,
+        "glob": "**/*.md"
+      },
+      "https://example.com/shared-skill.yaml"
+    ]
+  }
+}
+```
+
+### Per-Skill Config
+
+```json
+{
+  "skills": {
+    "my-skill": {
+      "description": "Override description",
+      "model": "openai/gpt-5.2",
+      "agent": "custom-agent",
+      "allowed-tools": ["read", "bash"],
+      "subtask": true,
+      "license": "MIT",
+      "metadata": {
+        "author": "Your Name",
+        "version": "1.0.0"
+      }
+    }
+  }
+}
+```
+
+## Real-World Skill Examples
+
+### Example 1: API Testing Skill
+
+**File:** `.opencode/skills/api-testing/SKILL.md`
+
+```markdown
+---
+name: api-testing
+description: "REST API testing with authentication"
+---
+
+# API Testing Skill
+
+You are an API testing specialist.
+
+## Testing Workflow
+
+1. **Happy Path**: Test expected behavior first
+2. **Edge Cases**: Test boundary conditions
+3. **Error Cases**: Test all documented error responses
+4. **Authentication**: Test with valid/invalid/expired tokens
+5. **Rate Limiting**: Verify rate limit enforcement
+
+## Test Structure
+
+```typescript
+describe('GET /api/users/:id', () => {
+  describe('Happy Path', () => {
+    it('returns user when authenticated', async () => {
+      // Test implementation
+    })
+  })
+  
+  describe('Edge Cases', () => {
+    it('handles user not found', async () => {
+      // Test implementation
+    })
+  })
+  
+  describe('Authentication', () => {
+    it('returns 401 when not authenticated', async () => {
+      // Test implementation
+    })
+  })
+})
+```
+
+## Assertions
+
+- Status code
+- Response schema (use Zod/Joi/Yup)
+- Response time ({`<`}200ms for most endpoints)
+- Required headers (Content-Type, etc.)
+```
+
+**Usage:**
+```typescript
+task(
+  category="test-writer",
+  load_skills=["api-testing"],
+  prompt="Write comprehensive API tests for /api/users endpoints"
+)
+```
+
+### Example 2: Database Migration Skill
+
+**File:** `.opencode/skills/db-migration/SKILL.md`
+
+```markdown
+---
+name: db-migration
+description: "Safe database migration practices"
+---
+
+# Database Migration Skill
+
+## Safety Checklist
+
+Before writing migration:
+
+- [ ] Backup strategy defined
+- [ ] Rollback tested
+- [ ] No data loss possible
+- [ ] Compatible with zero-downtime deployment
+- [ ] Indexes created CONCURRENTLY (PostgreSQL)
+
+## Migration Template
+
+```sql
+-- Up Migration
+BEGIN;
+  -- Changes here
+  -- Use transactions
+  -- Add constraints as NOT VALID first, validate separately
+COMMIT;
+
+-- Down Migration
+BEGIN;
+  -- Exact reverse
+COMMIT;
+```
+
+## Dangerous Operations
+
+Never in production without explicit approval:
+- DROP TABLE
+- DROP COLUMN (use deprecation workflow)
+- Changing column types (use shadow columns)
+- Removing constraints (verify no dependencies)
+
+## Safe Patterns
+
+### Adding Column (Zero-Downtime)
+
+```sql
+-- Migration 1: Add column (nullable)
+ALTER TABLE users ADD COLUMN email TEXT;
+
+-- Migration 2: Backfill data (in batches)
+UPDATE users SET email = old_email WHERE email IS NULL;
+
+-- Migration 3: Add NOT NULL constraint
+ALTER TABLE users ALTER COLUMN email SET NOT NULL;
+```
+
+### Removing Column (Safe)
+
+```sql
+-- Step 1: Deploy code ignoring column
+-- Step 2: Wait 1 deployment cycle
+-- Step 3: Drop column
+ALTER TABLE users DROP COLUMN old_email;
+```
+```
+
+### Example 3: Code Review Skill
+
+**File:** `.opencode/skills/code-review/SKILL.md`
+
+```markdown
+---
+name: code-review
+description: "Comprehensive code review checklist"
+---
+
+# Code Review Skill
+
+## Review Levels
+
+### Level 1: Correctness
+- Logic errors
+- Edge case handling
+- Error handling completeness
+- Resource cleanup (files, connections, locks)
+
+### Level 2: Quality
+- Readability (naming, structure)
+- Maintainability (complexity, coupling)
+- Test coverage (critical paths 100%)
+- Documentation (complex logic explained)
+
+### Level 3: Architecture
+- SOLID principles
+- Design patterns (appropriate vs over-engineered)
+- Separation of concerns
+- Future extensibility
+
+### Level 4: Context
+- Follows project conventions
+- Consistent with existing patterns
+- Appropriate abstractions
+- Security implications
+
+## Output Format
+
+### ✅ Approved
+**Strengths:**
+- List good patterns
+- Praise excellent decisions
+
+**Minor Suggestions:**
+- Optional improvements
+- Future considerations
+
+### ⚠️ Needs Changes
+**Required Changes:**
+1. Issue with severity and location
+2. Issue with proposed fix
+
+**Explanation:**
+- Why each change matters
+- What could go wrong
+
+### ❌ Requires Major Revision
+**Critical Issues:**
+- Architectural problems
+- Security vulnerabilities
+- Fundamental approach flaws
+
+**Recommendation:**
+- How to restructure
+- Alternative approaches
+```
+
+## Tips for Effective Skills
+
+<CardGroup cols={2}>
+<Card title="Be specific" icon="bullseye">
+✅ "Use Given/When/Then for tests"  
+❌ "Write good tests"
+</Card>
+
+<Card title="Include examples" icon="code">
+Show code snippets demonstrating the pattern
+</Card>
+
+<Card title="List anti-patterns" icon="ban">
+Explicitly state what NOT to do
+</Card>
+
+<Card title="Provide context" icon="book">
+Explain WHY the pattern matters
+</Card>
+</CardGroup>
+
+## Related
+
+<CardGroup cols={2}>
+<Card title="Custom Categories" icon="layer-group" href="/guides/custom-categories">
+Combine skills with categories
+</Card>
+
+<Card title="Commands" icon="terminal" href="/guides/commands">
+Slash commands for workflows
+</Card>
+
+<Card title="Background Agents" icon="rotate" href="/guides/background-agents">
+Use skills with parallel execution
+</Card>
+
+<Card title="Configuration" icon="gear" href="/configuration/skills">
+Full skills configuration reference
+</Card>
+</CardGroup>

@@ -1,0 +1,537 @@
+---
+title: "Explore Agent"
+description: "Fast codebase exploration and contextual grep for internal code discovery"
+---
+
+## Overview
+
+Explore is a specialized codebase search agent that answers "Where is X?", "Which file has Y?", and "Find the code that does Z". Designed for fast, parallel exploration of internal codebases with structured, actionable results.
+
+**Mission**: Find files and code, return actionable results with absolute paths.
+
+<ParamField path="model" type="string" default="grok-code-fast-1">
+  Ultra-fast model optimized for quick code searches
+</ParamField>
+
+<ParamField path="mode" type="string" default="subagent">
+  Background search agent, designed for parallel execution
+</ParamField>
+
+<ParamField path="temperature" type="number" default="0.1">
+  Low temperature for consistent, factual search results
+</ParamField>
+
+## Model Configuration
+
+### Default Model (Grok)
+
+```json
+{
+  "model": "grok-code-fast-1",
+  "temperature": 0.1
+}
+```
+
+### Alternative Models
+
+Explore adapts to available speed-focused models:
+
+```json
+// Free tier option
+{
+  "model": "minimax-m2.5-free"
+}
+
+// Fast Claude option
+{
+  "model": "claude-haiku-4-5"
+}
+
+// Minimal option
+{
+  "model": "gpt-5-nano"
+}
+```
+
+## Fallback Chain
+
+Explore prioritizes speed over quality:
+
+<ResponseField name="Primary" type="string">
+  `github-copilot/grok-code-fast-1`
+</ResponseField>
+
+<ResponseField name="Fallback 1" type="string">
+  `opencode/minimax-m2.5-free`
+</ResponseField>
+
+<ResponseField name="Fallback 2" type="string">
+  `anthropic/claude-haiku-4-5`
+</ResponseField>
+
+<ResponseField name="Fallback 3" type="string">
+  `opencode/gpt-5-nano`
+</ResponseField>
+
+<Note>
+  Explore is optimized for parallel execution. Fast, cheap models allow firing 3-5 explore agents simultaneously without performance concerns.
+</Note>
+
+## Tool Permissions
+
+### Allowed Tools (Read + Search)
+
+- `read` - Read files
+- `grep` - Search file contents with regex
+- `glob` - Find files by pattern
+- `ast_grep` - AST-aware code pattern search
+- `lsp_goto_definition` - Jump to symbol definitions
+- `lsp_find_references` - Find all symbol usages
+- `lsp_symbols` - Get file/workspace symbols
+- `bash` - Run git commands (log, blame, etc.)
+
+### Blocked Tools
+
+<ParamField path="write" type="string" default="deny">
+  Cannot create files - reports findings as text
+</ParamField>
+
+<ParamField path="edit" type="string" default="deny">
+  Cannot modify files
+</ParamField>
+
+<ParamField path="task" type="string" default="deny">
+  Cannot delegate to other agents
+</ParamField>
+
+<ParamField path="call_omo_agent" type="string" default="deny">
+  Cannot spawn other agents
+</ParamField>
+
+## When to Use Explore
+
+### Recommended Scenarios
+
+<Check>**Multiple search angles needed** - "Find all auth-related code"</Check>
+<Check>**Unfamiliar module structure** - "Where is error handling implemented?"</Check>
+<Check>**Cross-layer pattern discovery** - "Find all database query patterns"</Check>
+<Check>**2+ modules involved** - Fire explore in background</Check>
+
+### Avoid Explore For
+
+<Warning>**Known file location** - Use direct `read` instead</Warning>
+<Warning>**Single keyword suffices** - Use direct `grep` instead</Warning>
+<Warning>**External libraries** - Use Librarian agent instead</Warning>
+
+## Success Criteria
+
+Explore response has **SUCCEEDED** when:
+
+<Check>**All paths are absolute** - Start with `/`, never relative</Check>
+<Check>**Completeness** - Found ALL relevant matches, not just first</Check>
+<Check>**Actionability** - Caller can proceed without follow-up questions</Check>
+<Check>**Intent addressed** - Answered actual need, not just literal request</Check>
+<Check>**Structured output** - Includes results block in XML format</Check>
+
+## Failure Conditions
+
+Explore response has **FAILED** if:
+
+<Warning>Any path is relative (not absolute)</Warning>
+<Warning>Missed obvious matches in the codebase</Warning>
+<Warning>Caller needs to ask "but where exactly?" or "what about X?"</Warning>
+<Warning>Only answered literal question, not underlying need</Warning>
+<Warning>No results block with structured output</Warning>
+
+## Response Structure
+
+Every Explore response MUST include:
+
+### 1. Intent Analysis (Required)
+
+```xml
+<analysis>
+**Literal Request**: [What they literally asked]
+**Actual Need**: [What they're really trying to accomplish]
+**Success Looks Like**: [What result would let them proceed immediately]
+</analysis>
+```
+
+### 2. Parallel Execution (Required)
+
+Launch **3+ tools simultaneously** in first action. Never sequential unless output depends on prior result.
+
+### 3. Structured Results (Required)
+
+```xml
+{`<results>`}
+<files>
+- /absolute/path/to/file1.ts — [why this file is relevant]
+- /absolute/path/to/file2.ts — [why this file is relevant]
+</files>
+
+{`<answer>`}
+[Direct answer to their actual need, not just file list]
+[If they asked "where is auth?", explain the auth flow you found]
+{`</answer>`}
+
+{`<next_steps>`}
+[What they should do with this information]
+[Or: "Ready to proceed - no follow-up needed"]
+{`</next_steps>`}
+{`</results>`}
+```
+
+## Tool Strategy
+
+Use the right tool for each job:
+
+| Search Type | Tool | Example |
+|-------------|------|----------|
+| **Semantic** (definitions, references) | LSP tools | `lsp_goto_definition`, `lsp_find_references` |
+| **Structural** (function shapes, class structures) | ast_grep | `ast_grep_search('class $A extends $B')` |
+| **Text patterns** (strings, comments, logs) | grep | `grep('ERROR', path: 'src/')` |
+| **File patterns** (find by name/extension) | glob | `glob('**/*.config.ts')` |
+| **History** (when added, who changed) | git | `git log`, `git blame` |
+
+**Flood with parallel calls**. Cross-validate findings across multiple tools.
+
+## Usage Examples
+
+### Example 1: Finding Implementation Patterns
+
+```typescript
+// Delegated from main agent
+task(
+  subagent_type="explore",
+  run_in_background=true,
+  load_skills=[],
+  description="Find authentication patterns",
+  prompt="[CONTEXT]: I'm implementing JWT authentication for the REST API 
+          in src/api/routes/. I need to match existing auth conventions so 
+          my code fits seamlessly.
+          
+          [GOAL]: I need to decide on middleware structure and token flow.
+          
+          [DOWNSTREAM]: I'll use this to structure my middleware chain and 
+          choose where to validate tokens.
+          
+          [REQUEST]: Find:
+          - Auth middleware implementations  
+          - Login/signup handlers
+          - Token generation patterns
+          - Credential validation logic
+          
+          Focus on src/ — skip tests. Return file paths with pattern descriptions."
+)
+
+// Explore execution:
+<analysis>
+**Literal Request**: Find auth-related files and patterns
+**Actual Need**: Understand existing auth architecture to implement compatible JWT system
+**Success Looks Like**: Clear picture of middleware flow, token handling, and validation patterns
+</analysis>
+
+// Parallel tool calls (4 simultaneous)
+grep(pattern: "middleware.*auth", path: "src/", include: "*.ts")
+grep(pattern: "jwt|token", path: "src/", include: "*.ts")
+ast_grep_search('function login', path: 'src/')
+lsp_symbols(workspace: true, query: "authenticate")
+
+// Response:
+{`<results>`}
+<files>
+- /home/user/project/src/middleware/auth.ts — Main auth middleware, validates tokens
+- /home/user/project/src/routes/auth.ts — Login/register endpoints, token generation
+- /home/user/project/src/services/auth/jwt.ts — JWT sign/verify utilities
+- /home/user/project/src/services/auth/password.ts — Password hashing with bcrypt
+- /home/user/project/src/types/express.d.ts — Extended Request type with user property
+</files>
+
+{`<answer>`}
+Auth architecture follows standard Express middleware pattern:
+
+**Flow**:
+1. Login/register hits `/api/auth/login` (auth.ts route)
+2. Password validated via bcrypt (password.ts service)
+3. JWT generated and returned (jwt.ts service)
+4. Protected routes use auth middleware (middleware/auth.ts)
+5. Middleware extracts token, validates, attaches user to req.user
+
+**Middleware pattern** (auth.ts:15-45):
+```typescript
+export const authenticate = async (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1]
+  if (!token) return res.status(401).json({ error: 'No token' })
+  
+  try {
+    const payload = jwt.verify(token)
+    req.user = await User.findById(payload.userId)
+    next()
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' })
+  }
+}
+```
+
+**Token generation** (jwt.ts:8-12):
+```typescript
+export const generateToken = (userId: string) => {
+  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '15m' })
+}
+```
+
+**Your implementation should**:
+- Follow same middleware signature
+- Use existing jwt.ts service (don't create new one)
+- Attach user to req.user (matches type definition)
+- Return 401 with JSON error format
+{`</answer>`}
+
+{`<next_steps>`}
+Ready to implement - you have:
+✓ Middleware pattern to follow
+✓ Existing JWT utilities to reuse  
+✓ Error response format
+✓ Type definitions (req.user)
+
+Next: Implement your middleware using the same pattern in middleware/auth.ts
+{`</next_steps>`}
+{`</results>`}
+```
+
+### Example 2: Cross-Layer Discovery
+
+```typescript
+task(
+  subagent_type="explore",
+  run_in_background=true,
+  description="Find error handling patterns",
+  prompt="[CONTEXT]: Adding error handling to new API endpoints. Need to 
+          follow existing error conventions.
+          
+          [GOAL]: Understand error response format and global error handling.
+          
+          [DOWNSTREAM]: Will structure my try/catch blocks and error responses 
+          to match existing code.
+          
+          [REQUEST]: Find:
+          - Custom Error subclasses
+          - Error response format (JSON shape)
+          - Try/catch patterns in route handlers  
+          - Global error middleware
+          
+          Skip test files. Return error class hierarchy and response format."
+)
+
+// Explore execution:
+// Parallel tools (5 simultaneous)
+grep(pattern: "class.*Error.*extends", path: "src/", include: "*.ts")
+grep(pattern: "app.use.*error", path: "src/", include: "*.ts") 
+ast_grep_search('try { $$$ } catch ($E) { $$$ }', path: 'src/routes/')
+glob(pattern: "**/errors/*.ts", path: "src/")
+lsp_symbols(workspace: true, query: "Error")
+
+{`<results>`}
+<files>
+- /home/user/project/src/errors/AppError.ts — Base error class
+- /home/user/project/src/errors/ValidationError.ts — 400 validation errors
+- /home/user/project/src/errors/AuthError.ts — 401 auth errors  
+- /home/user/project/src/errors/NotFoundError.ts — 404 not found
+- /home/user/project/src/middleware/errorHandler.ts — Global error middleware
+- /home/user/project/src/routes/users.ts — Example error handling pattern
+</files>
+
+{`<answer>`}
+Error handling uses custom Error hierarchy with global middleware:
+
+**Error class hierarchy**:
+```
+AppError (base)
+├─ ValidationError (400)
+├─ AuthError (401)
+├─ NotFoundError (404)
+└─ ConflictError (409)
+```
+
+**Base class** (AppError.ts:3-10):
+```typescript
+export class AppError extends Error {
+  constructor(
+    public message: string,
+    public statusCode: number,
+    public code?: string
+  ) {
+    super(message)
+  }
+}
+```
+
+**Response format** (errorHandler.ts:8-15):
+```typescript
+app.use((err, req, res, next) => {
+  if (err instanceof AppError) {
+    return res.status(err.statusCode).json({
+      error: err.message,
+      code: err.code
+    })
+  }
+  // Unexpected errors
+  res.status(500).json({ error: 'Internal server error' })
+})
+```
+
+**Route handler pattern** (users.ts:23-31):
+```typescript
+try {
+  const user = await User.findById(req.params.id)
+  if (!user) throw new NotFoundError('User not found')
+  res.json(user)
+} catch (err) {
+  next(err) // Pass to global error handler
+}
+```
+
+**Your implementation should**:
+- Throw AppError subclasses (not raw Error)
+- Always pass errors to next(err) in catch blocks
+- Let global middleware handle response formatting
+- Use appropriate subclass for HTTP status
+{`</answer>`}
+
+{`<next_steps>`}
+Ready to implement error handling:
+✓ Import error classes from src/errors/
+✓ Throw appropriate subclass
+✓ Pass to next(err) in catch
+✓ Global middleware handles response
+{`</next_steps>`}
+{`</results>`}
+```
+
+### Example 3: History Investigation
+
+```typescript
+task(
+  subagent_type="explore",
+  run_in_background=true,
+  description="When was rate limiting added?",
+  prompt="[CONTEXT]: Debugging rate limit behavior, need to understand when 
+          and why it was implemented.
+          
+          [GOAL]: Find the commit, PR, and reasoning for rate limiting.
+          
+          [REQUEST]: Find when rate limiting was added, who added it, and why. 
+          Check git history, blame, and any related comments/docs."
+)
+
+// Explore execution:
+// Parallel tools
+grep(pattern: "rate.*limit", path: "src/", include: "*.ts")
+bash("git log --all --oneline --grep='rate limit'")
+bash("git log --all --oneline -- '**/rateLimit*'")
+
+// After finding file
+bash("git log --follow -- src/middleware/rateLimit.ts")
+bash("git blame src/middleware/rateLimit.ts")
+
+{`<results>`}
+<files>
+- /home/user/project/src/middleware/rateLimit.ts — Rate limiting middleware
+</files>
+
+{`<answer>`}
+Rate limiting added on 2025-11-15 by @alice in commit abc123f.
+
+**Commit**: abc123f - "Add rate limiting to auth endpoints"
+**Author**: Alice Chen <alice@example.com>
+**Date**: 2025-11-15
+
+**Why it was added** (from commit message):
+```
+Add rate limiting to auth endpoints
+
+Prevents brute force attacks on /login and /register.
+Limit: 5 requests per 15 minutes per IP.
+
+Fixes: #234 (Brute force vulnerability report)
+```
+
+**Implementation** (rateLimit.ts:8-15):
+```typescript
+import rateLimit from 'express-rate-limit'
+
+export const authRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 requests per window
+  message: 'Too many attempts, please try again later'
+})
+```
+
+**Applied to** (routes/auth.ts:12):
+```typescript
+router.post('/login', authRateLimit, loginHandler)
+router.post('/register', authRateLimit, registerHandler)
+```
+
+**Related issue**: #234 reported brute force vulnerability allowing 
+unlimited login attempts. Rate limiting was the mitigation.
+{`</answer>`}
+
+{`<next_steps>`}
+History clear:
+✓ Added 2025-11-15 for security (brute force prevention)
+✓ Only applies to auth endpoints  
+✓ 5 requests per 15min per IP
+
+If rate limit seems too aggressive, discuss with @alice (original author).
+{`</next_steps>`}
+{`</results>`}
+```
+
+## Search Stop Conditions
+
+STOP searching when:
+
+<Check>You have enough context to proceed confidently</Check>
+<Check>Same information appearing across multiple sources</Check>
+<Check>2 search iterations yielded no new useful data</Check>
+<Check>Direct answer found</Check>
+
+**DO NOT over-explore. Time is precious.**
+
+## Configuration
+
+Customize Explore in `oh-my-opencode.jsonc`:
+
+```jsonc
+{
+  "agents": {
+    "explore": {
+      "model": "github-copilot/grok-code-fast-1",
+      "temperature": 0.1,
+      "prompt_append": "Additional search guidelines...",
+      "disable": false
+    }
+  }
+}
+```
+
+## Best Practices
+
+<Check>**Fire in parallel** - Launch 2-5 explore agents with different angles</Check>
+<Check>**Run in background** - Always use `run_in_background=true`</Check>
+<Check>**Absolute paths only** - Never return relative paths</Check>
+<Check>**Address true intent** - Not just literal request</Check>
+<Check>**Use multiple tools** - Cross-validate with grep + ast_grep + LSP</Check>
+
+<Warning>**Never use for external libraries** - Use Librarian agent instead</Warning>
+<Warning>**Never block on explore** - Always background, collect results later</Warning>
+<Warning>**Never return relative paths** - All paths must start with `/`</Warning>
+<Warning>**Never skip intent analysis** - Understand actual need first</Warning>
+
+## Related Agents
+
+- [Librarian](/api/agents/librarian) - For external library/OSS searches (not internal codebase)
+- [Sisyphus](/api/agents/sisyphus) - Orchestrator that fires explores in parallel
+- [Hephaestus](/api/agents/hephaestus) - Autonomous worker that uses explore for research

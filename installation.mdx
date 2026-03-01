@@ -1,0 +1,624 @@
+---
+title: Installation
+description: Complete installation guide for Oh My OpenCode with all providers and configuration
+---
+
+## Prerequisites
+
+<Warning>
+You must have **OpenCode 1.0.150 or higher** installed before proceeding.
+
+Check your version:
+```bash
+opencode --version
+```
+
+If OpenCode isn't installed, visit [https://opencode.ai/docs](https://opencode.ai/docs) for installation instructions.
+</Warning>
+
+## Installation methods
+
+### Method 1: Let an AI agent install it (recommended)
+
+The easiest and most reliable way:
+
+<Steps>
+  <Step title="Copy this prompt to your LLM agent">
+    Paste this into Claude Code, AmpCode, Cursor, or any agent:
+
+    ```text
+    Install and configure oh-my-opencode by following the instructions here:
+    https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/refs/heads/dev/docs/guide/installation.md
+    ```
+
+    <Tip>
+    The agent will:
+    - Ask about your AI subscriptions
+    - Run the installer with correct flags
+    - Configure agent models automatically
+    - Guide you through provider authentication
+    - Verify the setup is working
+    </Tip>
+  </Step>
+
+  <Step title="Answer subscription questions">
+    The agent will ask about:
+    - Claude Pro/Max subscription (max20 mode?)
+    - ChatGPT Plus subscription
+    - Gemini access
+    - GitHub Copilot subscription
+    - OpenCode Zen access
+    - Z.ai Coding Plan subscription
+
+    Based on your answers, it runs the installer with appropriate flags.
+  </Step>
+
+  <Step title="Authenticate providers">
+    The agent will guide you through authentication for each provider you selected.
+  </Step>
+</Steps>
+
+### Method 2: Interactive installer
+
+Run the installer manually and answer the prompts:
+
+<CodeGroup>
+```bash Bun (recommended)
+bunx oh-my-opencode install
+```
+
+```bash npm
+npx oh-my-opencode install
+```
+</CodeGroup>
+
+<Note>
+The CLI ships with **standalone binaries** for all major platforms:
+- macOS (ARM64, x64)
+- Linux (x64, ARM64, Alpine/musl)  
+- Windows (x64)
+
+No runtime (Bun/Node.js) required for CLI execution after installation.
+</Note>
+
+### Method 3: Non-interactive installer
+
+If you know exactly which providers you have, use flags:
+
+<CodeGroup>
+```bash All native providers
+bunx oh-my-opencode install --no-tui \
+  --claude=max20 \
+  --openai=yes \
+  --gemini=yes \
+  --copilot=no
+```
+
+```bash Claude only
+bunx oh-my-opencode install --no-tui \
+  --claude=yes \
+  --gemini=no \
+  --copilot=no
+```
+
+```bash Claude + OpenAI
+bunx oh-my-opencode install --no-tui \
+  --claude=yes \
+  --openai=yes \
+  --gemini=no \
+  --copilot=no
+```
+
+```bash GitHub Copilot only
+bunx oh-my-opencode install --no-tui \
+  --claude=no \
+  --gemini=no \
+  --copilot=yes
+```
+
+```bash Z.ai for Librarian
+bunx oh-my-opencode install --no-tui \
+  --claude=yes \
+  --gemini=no \
+  --copilot=no \
+  --zai-coding-plan=yes
+```
+
+```bash OpenCode Zen
+bunx oh-my-opencode install --no-tui \
+  --claude=no \
+  --gemini=no \
+  --copilot=no \
+  --opencode-zen=yes
+```
+</CodeGroup>
+
+## Provider authentication
+
+After installation, authenticate the providers you selected.
+
+### Anthropic (Claude)
+
+<Steps>
+  <Step title="Start authentication">
+    ```bash
+    opencode auth login
+    ```
+  </Step>
+
+  <Step title="Select Anthropic provider">
+    In the interactive terminal, choose:
+    - **Provider:** Anthropic
+    - **Login method:** Claude Pro/Max
+  </Step>
+
+  <Step title="Complete OAuth flow">
+    A browser window will open. Sign in with your Anthropic account and authorize OpenCode.
+  </Step>
+
+  <Step title="Verify success">
+    ```bash
+    opencode config list
+    ```
+
+    You should see Anthropic listed with models like `anthropic/claude-opus-4-6`.
+  </Step>
+</Steps>
+
+<Warning>
+**Sisyphus strongly recommends Claude Opus 4.6.** Using other models for Sisyphus may result in significantly degraded experience.
+
+Sisyphus has Claude-optimized prompts. **No GPT prompt exists for Sisyphus.**
+</Warning>
+
+### Google Gemini (Antigravity OAuth)
+
+<Steps>
+  <Step title="Add the Antigravity auth plugin">
+    Edit `~/.config/opencode/opencode.json`:
+
+    ```json
+    {
+      "plugin": [
+        "oh-my-opencode",
+        "opencode-antigravity-auth@latest"
+      ]
+    }
+    ```
+  </Step>
+
+  <Step title="Configure Gemini models">
+    Read the [opencode-antigravity-auth documentation](https://github.com/NoeFabris/opencode-antigravity-auth).
+
+    Copy the full model configuration from the README and merge carefully to avoid breaking existing setup.
+
+    <Note>
+    The plugin uses a **variant system**:
+    - `antigravity-gemini-3-pro` supports `low`/`high` variants
+    - Use `--variant=high` instead of separate `-high` model entries
+    </Note>
+  </Step>
+
+  <Step title="Override Oh My OpenCode agent models">
+    In `~/.config/opencode/oh-my-opencode.json`:
+
+    ```json
+    {
+      "agents": {
+        "multimodal-looker": {
+          "model": "google/antigravity-gemini-3-flash"
+        }
+      }
+    }
+    ```
+
+    **Available Antigravity models:**
+    - `google/antigravity-gemini-3-pro` — variants: `low`, `high`
+    - `google/antigravity-gemini-3-flash` — variants: `minimal`, `low`, `medium`, `high`
+    - `google/antigravity-claude-sonnet-4-6` — no variants
+    - `google/antigravity-claude-sonnet-4-6-thinking` — variants: `low`, `max`
+    - `google/antigravity-claude-opus-4-5-thinking` — variants: `low`, `max`
+
+    **Available Gemini CLI quota models:**
+    - `google/gemini-2.5-flash`, `google/gemini-2.5-pro`, `google/gemini-3-flash-preview`, `google/gemini-3-pro-preview`
+  </Step>
+
+  <Step title="Authenticate">
+    ```bash
+    opencode auth login
+    ```
+
+    - **Provider:** Google
+    - **Login method:** OAuth with Google (Antigravity)
+
+    Complete sign-in in browser (auto-detected).
+  </Step>
+
+  <Step title="Multi-account load balancing (optional)">
+    The plugin supports **up to 10 Google accounts**. When one hits rate limits, it automatically switches to the next available account.
+
+    To add more accounts, run `opencode auth login` again and select Google.
+  </Step>
+</Steps>
+
+### OpenAI (ChatGPT Plus)
+
+<Steps>
+  <Step title="Authenticate">
+    ```bash
+    opencode auth login
+    ```
+
+    - **Provider:** OpenAI
+    - **Login method:** ChatGPT Plus
+  </Step>
+
+  <Step title="Verify GPT models are available">
+    ```bash
+    opencode config list
+    ```
+
+    You should see:
+    - `openai/gpt-5.3-codex` — Required for Hephaestus agent
+    - `openai/gpt-5.2` — Used for Oracle agent
+    - `openai/gpt-5-nano` — Fast utility tasks
+  </Step>
+</Steps>
+
+<Tip>
+**Why GPT access matters:**
+
+- **Hephaestus** (deep autonomous worker) requires GPT-5.3-codex
+- **Oracle** (architecture consultant) prefers GPT-5.2 for high-IQ reasoning
+- **Prometheus** and **Atlas** have dual prompts that auto-switch to GPT-optimized versions when GPT models detected
+</Tip>
+
+### GitHub Copilot (fallback provider)
+
+GitHub Copilot acts as a **proxy provider** when native providers are unavailable.
+
+<Steps>
+  <Step title="Run installer with Copilot flag">
+    ```bash
+    bunx oh-my-opencode install --no-tui --copilot=yes
+    ```
+  </Step>
+
+  <Step title="Authenticate">
+    ```bash
+    opencode auth login
+    ```
+
+    - **Provider:** GitHub
+    - **Method:** OAuth
+  </Step>
+</Steps>
+
+**Provider priority:**
+```
+Native (anthropic/, openai/, google/) > GitHub Copilot > OpenCode Zen > Z.ai Coding Plan
+```
+
+**Model mappings when Copilot is the best available provider:**
+
+| Agent | Model |
+|-------|-------|
+| **Sisyphus** | `github-copilot/claude-opus-4-6` |
+| **Oracle** | `github-copilot/gpt-5.2` |
+| **Explore** | `opencode/gpt-5-nano` |
+| **Librarian** | `zai-coding-plan/glm-4.7` (if Z.ai available) |
+
+### Z.ai Coding Plan
+
+Z.ai provides access to GLM-4.7 models. When enabled, **Librarian agent always uses `zai-coding-plan/glm-4.7`** regardless of other providers.
+
+<Steps>
+  <Step title="Run installer with Z.ai flag">
+    ```bash
+    bunx oh-my-opencode install --no-tui --zai-coding-plan=yes
+    ```
+  </Step>
+
+  <Step title="Authenticate via Z.ai dashboard">
+    Visit [https://z.ai/subscribe](https://z.ai/subscribe) and subscribe to the Coding Plan ($10/month).
+
+    Follow Z.ai's authentication instructions to connect with OpenCode.
+  </Step>
+</Steps>
+
+**Model mappings when Z.ai is the only provider:**
+
+| Agent | Model |
+|-------|-------|
+| **Sisyphus** | `zai-coding-plan/glm-4.7` |
+| **Oracle** | `zai-coding-plan/glm-4.7` |
+| **Explore** | `zai-coding-plan/glm-4.7-flash` |
+| **Librarian** | `zai-coding-plan/glm-4.7` |
+
+### OpenCode Zen
+
+OpenCode Zen provides access to `opencode/` prefixed models:
+
+- `opencode/claude-opus-4-6`
+- `opencode/gpt-5.2`
+- `opencode/gpt-5-nano`
+- `opencode/glm-4.7-free`
+
+<Steps>
+  <Step title="Run installer with OpenCode Zen flag">
+    ```bash
+    bunx oh-my-opencode install --no-tui --opencode-zen=yes
+    ```
+  </Step>
+
+  <Step title="Check available models">
+    ```bash
+    opencode config list
+    ```
+
+    Models are automatically available through OpenCode's built-in provider.
+  </Step>
+</Steps>
+
+**Model mappings when OpenCode Zen is the best available provider:**
+
+| Agent | Model |
+|-------|-------|
+| **Sisyphus** | `opencode/claude-opus-4-6` |
+| **Oracle** | `opencode/gpt-5.2` |
+| **Explore** | `opencode/gpt-5-nano` |
+| **Librarian** | `opencode/glm-4.7-free` |
+
+## Verify installation
+
+<Steps>
+  <Step title="Check OpenCode version">
+    ```bash
+    opencode --version
+    ```
+
+    Should be **1.0.150 or higher**.
+  </Step>
+
+  <Step title="Verify plugin is loaded">
+    ```bash
+    cat ~/.config/opencode/opencode.json
+    ```
+
+    Should contain `"oh-my-opencode"` in the `plugin` array:
+
+    ```json
+    {
+      "plugin": [
+        "oh-my-opencode"
+      ]
+    }
+    ```
+  </Step>
+
+  <Step title="Check agent configuration">
+    ```bash
+    cat ~/.config/opencode/oh-my-opencode.json
+    ```
+
+    You should see agent models configured based on your subscriptions.
+  </Step>
+
+  <Step title="Run a test command">
+    ```bash
+    opencode
+    ```
+
+    In the session, type:
+    ```text
+    @sisyphus Hello!
+    ```
+
+    Sisyphus should respond, confirming the plugin is working.
+  </Step>
+</Steps>
+
+## Understanding your model setup
+
+The installer auto-configured agent models based on your subscriptions. Here's what you got:
+
+### Model families
+
+**Claude-like models** (instruction-following, structured output):
+
+- **Claude Opus 4.6**, **Claude Sonnet 4.6**, **Claude Haiku 4.5**
+- **Kimi K2.5** — behaves very similarly to Claude, great all-rounder
+- **GLM 5** — Claude-like behavior, good for broad tasks
+- **Big Pickle (GLM 4.6)** — free-tier GLM, decent fallback
+
+**GPT models** (explicit reasoning, principle-driven):
+
+- **GPT-5.3-codex** — deep coding powerhouse, required for Hephaestus
+- **GPT-5.2** — high intelligence, default for Oracle
+- **GPT-5-Nano** — ultra-cheap, fast utility tasks
+
+**Different-behavior models**:
+
+- **Gemini 3 Pro** — excels at visual/frontend tasks, different reasoning style
+- **Gemini 3 Flash** — fast, good for doc search and light tasks
+- **MiniMax M2.5** — fast and smart for utility tasks
+- **Grok Code Fast 1** — very fast, optimized for code grep/search
+
+### Agent model assignments
+
+**Claude-optimized agents** (prompts tuned for Claude-family):
+
+| Agent | Role | Default Chain |
+|-------|------|---------------|
+| **Sisyphus** | Main ultraworker | Opus (max) → Kimi K2.5 → GLM 5 → Big Pickle |
+| **Metis** | Plan review | Opus (max) → Kimi K2.5 → GPT-5.2 → Gemini 3 Pro |
+
+<Warning>
+**Never use GPT for Sisyphus.** No GPT prompt exists. Will degrade significantly.
+</Warning>
+
+**Dual-prompt agents** (auto-switch between Claude and GPT prompts):
+
+| Agent | Role | Default Chain | GPT Prompt? |
+|-------|------|---------------|-------------|
+| **Prometheus** | Strategic planner | Opus (max) → GPT-5.2 (high) → Kimi K2.5 → Gemini 3 Pro | Yes — XML-tagged, principle-driven |
+| **Atlas** | Todo orchestrator | Kimi K2.5 → Sonnet → GPT-5.2 | Yes — GPT-optimized todo management |
+
+**GPT-native agents** (built for GPT, don't override to Claude):
+
+| Agent | Role | Default Chain |
+|-------|------|---------------|
+| **Hephaestus** | Deep autonomous worker | GPT-5.3-codex (medium) only |
+| **Oracle** | Architecture/debugging | GPT-5.2 (high) → Gemini 3 Pro → Opus |
+| **Momus** | High-accuracy reviewer | GPT-5.2 (medium) → Opus → Gemini 3 Pro |
+
+**Utility agents** (speed over intelligence):
+
+| Agent | Role | Default Chain |
+|-------|------|---------------|
+| **Explore** | Fast codebase grep | MiniMax M2.5 Free → Grok Code Fast → Haiku |
+| **Librarian** | Docs/code search | MiniMax M2.5 Free → Gemini Flash → Big Pickle |
+| **Multimodal Looker** | Vision/screenshots | Kimi K2.5 → Kimi Free → Gemini Flash |
+
+<Tip>
+**Don't "upgrade" utility agents to Opus.** They're intentionally using fast, cheap models. Explore and Librarian don't need deep reasoning for grep and search tasks.
+</Tip>
+
+### Safe vs dangerous overrides
+
+**Safe** (same family):
+- Sisyphus: Opus → Sonnet, Kimi K2.5, GLM 5
+- Prometheus: Opus → GPT-5.2 (auto-switches prompt)
+- Atlas: Kimi K2.5 → Sonnet, GPT-5.2 (auto-switches)
+
+**Dangerous** (no prompt support):
+- Sisyphus → GPT: **No GPT prompt. Will degrade significantly.**
+- Hephaestus → Claude: **Built for Codex. Claude can't replicate this.**
+- Explore → Opus: **Massive cost waste. Explore needs speed, not intelligence.**
+- Librarian → Opus: **Same. Doc search doesn't need Opus-level reasoning.**
+
+## Custom configuration
+
+Override specific agents or categories in `~/.config/opencode/oh-my-opencode.json`:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+
+  "agents": {
+    "sisyphus": {
+      "model": "kimi-for-coding/k2p5",
+      "ultrawork": { "model": "anthropic/claude-opus-4-6", "variant": "max" }
+    },
+    "oracle": {
+      "model": "openai/gpt-5.2",
+      "variant": "high"
+    }
+  },
+
+  "categories": {
+    "visual-engineering": {
+      "model": "google/gemini-3-pro",
+      "variant": "high"
+    },
+    "quick": {
+      "model": "anthropic/claude-haiku-4-5"
+    }
+  }
+}
+```
+
+<Note>
+See the [Configuration Reference](/configuration/overview) for all available options.
+</Note>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Plugin not loading">
+    Check `~/.config/opencode/opencode.json` contains `"oh-my-opencode"` in the `plugin` array.
+
+    If missing:
+    ```bash
+    bunx oh-my-opencode install --no-tui
+    ```
+  </Accordion>
+
+  <Accordion title="Authentication failing">
+    Clear auth cache and re-authenticate:
+    ```bash
+    rm -rf ~/.config/opencode/auth
+    opencode auth login
+    ```
+  </Accordion>
+
+  <Accordion title="Sisyphus not responding">
+    Check if Claude is authenticated:
+    ```bash
+    opencode config list | grep anthropic
+    ```
+
+    If not listed, run:
+    ```bash
+    opencode auth login
+    ```
+
+    Select Anthropic → Claude Pro/Max.
+  </Accordion>
+
+  <Accordion title="Hephaestus unavailable">
+    Hephaestus requires GPT-5.3-codex access (ChatGPT Plus subscription).
+
+    Verify:
+    ```bash
+    opencode config list | grep gpt-5.3-codex
+    ```
+
+    If not listed, authenticate OpenAI:
+    ```bash
+    opencode auth login
+    ```
+  </Accordion>
+
+  <Accordion title="Models not showing in config list">
+    Plugin load timeout may be too short. The plugin needs time to load all configurations.
+
+    Wait 10-15 seconds after starting OpenCode, then check again:
+    ```bash
+    opencode config list
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Run your first ultrawork"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Try ultrawork mode and see parallel agent execution in action
+  </Card>
+  <Card
+    title="Learn about agents"
+    icon="users"
+    href="/concepts/agents"
+  >
+    Deep dive into each agent's role and capabilities
+  </Card>
+  <Card
+    title="Customize configuration"
+    icon="sliders"
+    href="/configuration/overview"
+  >
+    Override models, disable features, and tune for your workflow
+  </Card>
+  <Card
+    title="Troubleshooting guide"
+    icon="wrench"
+    href="/resources/troubleshooting"
+  >
+    Solutions for common issues and advanced debugging
+  </Card>
+</CardGroup>
