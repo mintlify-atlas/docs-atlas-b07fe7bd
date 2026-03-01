@@ -1,0 +1,293 @@
+---
+title: slashcommand
+description: Execute custom commands with template support (deprecated, use skill tool)
+---
+
+## Overview
+
+<Warning>
+  The `slashcommand` tool is deprecated. Use the [skill](/api/tools/skill) tool instead, which unifies skill and command loading.
+</Warning>
+
+The `slashcommand` tool executes custom slash commands defined in `.opencode/commands/` or `~/.config/opencode/commands/`.
+
+**Source**: `src/tools/slashcommand/`
+
+## Command discovery
+
+Commands are discovered from:
+
+1. **Project** (`.opencode/commands/`) - Highest priority
+2. **User** (`~/.config/opencode/commands/`)
+3. **Built-in** (plugin commands) - Lowest priority
+
+Commands are executable files (shell scripts, Python, Node.js, etc.) with metadata in comments.
+
+## Command format
+
+Example command file `.opencode/commands/publish.sh`:
+
+```bash
+#!/usr/bin/env bash
+# METADATA: {"description": "Publish npm package", "argumentHint": "[patch|minor|major]"}
+
+set -e
+
+VERSION_TYPE="${1:-patch}"
+
+echo "Publishing with version bump: $VERSION_TYPE"
+
+npm version "$VERSION_TYPE"
+git push --follow-tags
+npm publish
+
+echo "Published successfully!"
+```
+
+### Metadata format
+
+Commands include JSON metadata in comments:
+
+```bash
+# METADATA: {"description": "Command description", "argumentHint": "<required_arg>"}
+```
+
+- `description` - Short description for command listing
+- `argumentHint` - Argument format hint (shown in tool description)
+
+## Template variables
+
+Commands support template variable substitution:
+
+- `{{USER_MESSAGE}}` - Replaced with command arguments
+- `{{REPO_NAME}}` - Current repository name
+- `{{BRANCH_NAME}}` - Current git branch
+- `{{WORKSPACE_DIR}}` - Workspace directory path
+
+Example with templates:
+
+```bash
+#!/usr/bin/env bash
+# METADATA: {"description": "Create feature branch"}
+
+git checkout -b "feature/{{USER_MESSAGE}}"
+git push -u origin "feature/{{USER_MESSAGE}}"
+```
+
+## Parameters
+
+<ParamField path="name" type="string" required>
+  Command name (with or without leading slash)
+  
+  Examples:
+  - `"/publish"`
+  - `"publish"` (slash optional)
+  
+  **Case-insensitive**: Commands are matched case-insensitively.
+</ParamField>
+
+<ParamField path="user_message" type="string">
+  Arguments to pass to the command
+  
+  Replaces `{{USER_MESSAGE}}` in command template and passed as `$1` to scripts.
+  
+  Example:
+  ```python
+  slashcommand(name="publish", user_message="minor")
+  ```
+</ParamField>
+
+## Response
+
+<ResponseField name="output" type="string">
+  Command execution result
+  
+  **Success**:
+  ```
+  ## Command: /publish
+  
+  Arguments: patch
+  
+  Publishing with version bump: patch
+  v1.2.3
+  Published successfully!
+  ```
+  
+  **Error**:
+  ```
+  Error executing command: npm ERR! 404 Not Found
+  ```
+</ResponseField>
+
+## Usage examples
+
+### Execute command with arguments
+
+```python
+# Publish with patch version
+slashcommand(name="publish", user_message="patch")
+
+# Publish with minor version
+slashcommand(name="publish", user_message="minor")
+```
+
+### Execute command without arguments
+
+```python
+slashcommand(name="test")
+```
+
+### Command with template substitution
+
+Command file:
+
+```bash
+#!/usr/bin/env bash
+# METADATA: {"description": "Deploy to environment"}
+
+ENV="{{USER_MESSAGE}}"
+
+echo "Deploying to $ENV..."
+npm run build
+npm run deploy:$ENV
+```
+
+Usage:
+
+```python
+slashcommand(name="deploy", user_message="staging")
+slashcommand(name="deploy", user_message="production")
+```
+
+## Command types
+
+### Shell scripts
+
+```bash
+#!/usr/bin/env bash
+# METADATA: {"description": "Run tests"}
+
+npm test
+```
+
+### Python scripts
+
+```python
+#!/usr/bin/env python3
+# METADATA: {"description": "Analyze codebase"}
+
+import sys
+import os
+
+arg = sys.argv[1] if len(sys.argv) > 1 else "default"
+print(f"Analyzing: {arg}")
+```
+
+### Node.js scripts
+
+```javascript
+#!/usr/bin/env node
+// METADATA: {"description": "Build project"}
+
+const arg = process.argv[2] || "development";
+console.log(`Building for ${arg}...`);
+```
+
+## Error handling
+
+### Command not found
+
+```
+Error: Command "/unknown" not found. Available: /publish, /test, /deploy
+```
+
+### Execution error
+
+```
+Error executing command: /bin/bash: line 5: npm: command not found
+```
+
+### Permission denied
+
+```
+Error executing command: Permission denied
+```
+
+Make sure command files are executable:
+
+```bash
+chmod +x .opencode/commands/publish.sh
+```
+
+## Migration to skill tool
+
+Instead of using `slashcommand`, use the `skill` tool:
+
+**Before** (deprecated):
+
+```python
+slashcommand(name="publish", user_message="patch")
+```
+
+**After** (recommended):
+
+```python
+skill(name="publish", user_message="patch")
+```
+
+The `skill` tool:
+- Unified interface for skills and commands
+- Better error messages
+- Supports command priority and scoping
+- Integrates with skill MCP servers
+
+Commands discovered by the slash command system are automatically available in the skill tool.
+
+## Command discovery details
+
+Command discovery uses `discoverCommandsSync()` which:
+
+1. Scans command directories
+2. Reads metadata from file comments
+3. Determines command scope (project/user/builtin)
+4. Handles priority resolution
+
+Higher priority commands override lower priority ones with the same name.
+
+## Implementation details
+
+### Metadata parsing
+
+Metadata is extracted from file comments using regex matching:
+
+```javascript
+// METADATA: {...}
+# METADATA: {...}
+/* METADATA: {...} */
+```
+
+All three comment styles are supported.
+
+### Template interpolation
+
+Template variables are replaced before execution:
+
+```javascript
+const interpolated = template
+  .replace(/{{USER_MESSAGE}}/g, userMessage)
+  .replace(/{{REPO_NAME}}/g, repoName)
+  .replace(/{{BRANCH_NAME}}/g, branchName);
+```
+
+### Execution environment
+
+Commands execute with:
+
+- Working directory: Project root
+- Environment: Inherited from parent process
+- Stdio: Captured for output
+
+## Related tools
+
+- [skill](/api/tools/skill) - Unified skill and command loading (recommended)
+- [bash](/api/tools/bash) - General shell command execution

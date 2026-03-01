@@ -1,0 +1,380 @@
+---
+title: skill
+description: Load domain-specific instructions and embedded MCP servers from skills and slash commands
+---
+
+## Overview
+
+The `skill` tool loads specialized instructions from skills and slash commands. Skills provide detailed step-by-step guidance, embedded MCP servers, and domain-specific knowledge for specific tasks.
+
+**Source**: `src/tools/skill/`
+
+## Skill vs command
+
+| Type | Format | Purpose |
+|------|--------|----------|
+| **Skill** | SKILL.md file | Full instructions with MCP servers, multi-step guidance |
+| **Command** | Template file | Quick commands with argument interpolation |
+
+Both are loaded via the same tool, but serve different use cases.
+
+## Parameters
+
+<ParamField path="name" type="string" required>
+  The skill or command name (without leading slash for commands)
+  
+  Examples:
+  - `"code-review"` - Load code-review skill
+  - `"publish"` - Load /publish command (omit the slash)
+  - `"mintlify"` - Load Mintlify documentation skill
+  
+  **Case-insensitive**: "code-review", "Code-Review", "CODE-REVIEW" all work.
+</ParamField>
+
+<ParamField path="user_message" type="string">
+  Optional arguments or context for command invocation
+  
+  Used for slash commands that accept arguments:
+  
+  Example:
+  ```python
+  skill(name="publish", user_message="patch")
+  ```
+  
+  The user_message is interpolated into command templates.
+</ParamField>
+
+## Response
+
+<ResponseField name="output" type="string">
+  Skill instructions or command template
+  
+  **Skill example**:
+  ```markdown
+  ## Skill: code-review
+  
+  **Base directory**: /home/user/.config/opencode/skills/code-review
+  
+  # Code Review Skill
+  
+  This skill provides comprehensive code review guidelines...
+  
+  ## Review checklist
+  1. Check for code style consistency
+  2. Verify error handling
+  3. Look for security issues
+  ...
+  
+  ## Available MCP Servers
+  
+  ### github-api
+  
+  **Tools:**
+  
+  #### `get_pull_request`
+  Fetch pull request details
+  
+  **inputSchema:**
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "owner": { "type": "string" },
+      "repo": { "type": "string" },
+      "number": { "type": "number" }
+    }
+  }
+  ```
+  
+  Use `skill_mcp` tool with `mcp_name="github-api"` to invoke.
+  ```
+  
+  **Command example**:
+  ```markdown
+  ## Command: /publish
+  
+  Arguments: patch
+  
+  npm version patch
+  git push --follow-tags
+  npm publish
+  ```
+</ResponseField>
+
+## Skill discovery
+
+Skills are discovered from multiple locations with priority:
+
+1. **Project** (`.opencode/skills/`) - Highest priority
+2. **User** (`~/.config/opencode/skills/`)
+3. **OpenCode** (`.opencode-project/skills/`)
+4. **Built-in** (plugin's builtin skills) - Lowest priority
+
+Higher priority skills override lower priority ones with the same name.
+
+## Skill format
+
+Skills are defined in `SKILL.md` files:
+
+```markdown
+---
+name: my-skill
+description: Short description for tool listing
+compatibility: Works with any codebase
+license: MIT
+mcp_servers:
+  my-server:
+    command: node
+    args: ["server.js"]
+    env:
+      API_KEY: ${API_KEY}
+---
+
+<skill-instruction>
+# Skill Title
+
+Detailed instructions go here...
+
+## Step 1
+...
+
+## Step 2
+...
+</skill-instruction>
+```
+
+### YAML frontmatter
+
+- `name` - Skill identifier (required)
+- `description` - Short description for tool listing
+- `compatibility` - Compatibility notes
+- `license` - License identifier
+- `mcp_servers` - Embedded MCP server configs (optional)
+- `agent` - Restrict to specific agent (optional)
+- `allowed_tools` - List of allowed tools (optional)
+
+### MCP servers
+
+Skills can embed MCP servers that are automatically loaded when the skill is invoked:
+
+```yaml
+mcp_servers:
+  github-api:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    env:
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+  
+  filesystem:
+    transport:
+      type: http
+      url: https://mcp.example.com/filesystem
+      headers:
+        Authorization: Bearer ${TOKEN}
+```
+
+Both stdio and HTTP transports are supported.
+
+## Command format
+
+Commands are template files in `.opencode/commands/` or `~/.config/opencode/commands/`:
+
+```bash
+#!/usr/bin/env bash
+# METADATA: {"description": "Publish package", "argumentHint": "[version_type]"}
+
+npm version {{USER_MESSAGE}}
+git push --follow-tags
+npm publish
+```
+
+### Template variables
+
+- `{{USER_MESSAGE}}` - Replaced with `user_message` parameter
+- `{{REPO_NAME}}` - Repository name
+- `{{BRANCH_NAME}}` - Current branch
+
+Metadata in comments provides description and argument hints for tool listing.
+
+## Usage patterns
+
+### Load skill for task context
+
+```python
+# Load skill to get instructions
+skill(name="code-review")
+
+# Now follow the instructions to review code
+# Skill provides: review checklist, best practices, MCP tools
+```
+
+### Execute command with arguments
+
+```python
+# Publish with patch version
+skill(name="publish", user_message="patch")
+
+# Publish with minor version
+skill(name="publish", user_message="minor")
+```
+
+### Load skill with MCP servers
+
+```python
+# Load skill
+result = skill(name="github-integration")
+
+# Skill includes GitHub MCP server
+# Use skill_mcp to call MCP tools:
+skill_mcp(
+  mcp_name="github-api",
+  tool_name="get_pull_request",
+  arguments={"owner": "org", "repo": "repo", "number": 123}
+)
+```
+
+### Delegate with skill loading
+
+Prefer loading skills via the `task` tool instead:
+
+```python
+task(
+  category="quick",
+  load_skills=["code-review"],
+  description="Review PR",
+  prompt="Review PR #123 using code-review guidelines",
+  run_in_background=False
+)
+```
+
+The delegated agent receives skill instructions in its context automatically.
+
+## Agent restrictions
+
+Skills can restrict which agents can load them:
+
+```yaml
+---
+name: restricted-skill
+agent: oracle
+---
+```
+
+Attempting to load from other agents returns an error:
+
+```
+Error: Skill "restricted-skill" is restricted to agent "oracle"
+```
+
+## Tool restrictions
+
+Skills can specify allowed tools:
+
+```yaml
+---
+name: safe-skill
+allowed_tools: ["read", "grep", "glob"]
+---
+```
+
+The agent can only use specified tools when this skill is loaded.
+
+## Error handling
+
+### Skill not found
+
+```
+Error: Skill or command "unknown-skill" not found. Available: code-review, publish, mintlify
+```
+
+### Partial match suggestions
+
+```
+Error: Skill or command "code" not found. Did you mean: code-review, code-style?
+```
+
+### MCP connection failure
+
+```markdown
+## Available MCP Servers
+
+### github-api
+
+*Failed to connect: ECONNREFUSED 127.0.0.1:3000*
+```
+
+The skill still loads, but MCP capabilities are unavailable.
+
+## Disabled skills
+
+Skills can be disabled in configuration:
+
+```json
+{
+  "disabled_skills": ["skill-name"]
+}
+```
+
+Disabled skills are not listed or loadable.
+
+## Built-in skills
+
+Oh My OpenCode includes several built-in skills:
+
+- `mintlify` - Mintlify documentation site authoring
+- `doc-reader` - External documentation navigation
+- `doc-author` - Documentation writing and editing
+- `update-nav` - Update docs.json navigation
+- `git-master` - Git workflow automation
+
+See each skill's documentation for detailed usage.
+
+## MCP integration
+
+When a skill with MCP servers is loaded:
+
+1. MCP servers are automatically started
+2. Tool lists tools, resources, and prompts
+3. Use `skill_mcp` to invoke MCP capabilities
+4. Servers are cleaned up when session ends
+
+MCP servers are session-scoped and isolated per skill invocation.
+
+## Implementation details
+
+### Lazy loading
+
+Skill content is loaded lazily when the skill is invoked, not when the tool is registered. This improves plugin startup performance.
+
+### Scope priority
+
+When multiple skills have the same name, the highest priority scope wins:
+
+```
+project (4) > user (3) > opencode (2) > builtin (1)
+```
+
+### Description caching
+
+Skill descriptions are cached for fast tool description generation. Cache is invalidated when skills change.
+
+### Git-master config injection
+
+The `git-master` skill receives special handling:
+
+```json
+{
+  "git_master": {
+    "watermark": "Co-authored-by: AI <ai@example.com>",
+    "co_author": "AI Agent <agent@example.com>"
+  }
+}
+```
+
+Config is injected into skill content automatically.
+
+## Related tools
+
+- [task](/api/tools/task) - Delegate with skill loading
+- [skill_mcp](/api/tools/skill-mcp) - Invoke skill MCP capabilities
+- [slashcommand](/api/tools/slashcommand) - Execute slash commands (deprecated, use skill instead)

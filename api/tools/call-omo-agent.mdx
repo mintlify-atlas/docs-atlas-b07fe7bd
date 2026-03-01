@@ -1,0 +1,287 @@
+---
+title: call_omo_agent
+description: Invoke specific named agents directly with explore, librarian, oracle, and more
+---
+
+## Overview
+
+The `call_omo_agent` tool provides direct invocation of named agents without the category system. Use this for quick, targeted agent calls when you know exactly which agent you need.
+
+**Source**: `src/tools/call-omo-agent/`
+
+## Distinction from task tool
+
+| Aspect | `call_omo_agent` | `task` |
+|--------|-----------------|--------|
+| Agent selection | Named agent (explore/librarian/oracle/etc) | Category or subagent_type |
+| Skill loading | Not supported | `load_skills[]` supported |
+| Model selection | From agent's fallback chain | From category config |
+| Use case | Quick direct agent invocation | Full delegation with skills |
+
+## Allowed agents
+
+Only the following agents are allowed (case-insensitive):
+
+- `explore` - Specialized for codebase exploration and pattern finding
+- `librarian` - Research external documentation and references
+- `oracle` - Expert analysis and recommendations
+- `hephaestus` - Build and infrastructure tasks
+- `metis` - Strategic planning and architecture
+- `momus` - Code review and quality assessment
+- `multimodal-looker` - Visual analysis and image processing
+
+## Parameters
+
+<ParamField path="description" type="string" required>
+  Short task description (3-5 words)
+  
+  Example: `"Explore codebase patterns"`
+</ParamField>
+
+<ParamField path="prompt" type="string" required>
+  The detailed task for the agent to perform
+  
+  Must be in English. Provide clear, specific instructions.
+  
+  Example:
+  ```
+  Find all instances of the authentication pattern in the codebase.
+  Look for JWT token handling, session management, and OAuth flows.
+  ```
+</ParamField>
+
+<ParamField path="subagent_type" type="string" required>
+  The agent to invoke (explore, librarian, oracle, etc.)
+  
+  Case-insensitive. Only agents from the allowed list are accepted.
+  
+  Example: `"explore"` or `"Explore"` or `"EXPLORE"`
+</ParamField>
+
+<ParamField path="run_in_background" type="boolean" required>
+  Execution mode
+  
+  - `true`: Asynchronous execution, returns task_id immediately. Use `background_output` to poll results.
+  - `false`: Synchronous execution, waits for completion and returns result directly.
+  
+  **Important**: This parameter is REQUIRED. You must explicitly set it.
+</ParamField>
+
+<ParamField path="session_id" type="string">
+  Existing session ID to continue
+  
+  Pass this to resume a previous agent session with full context preserved.
+  
+  **Note**: Not supported with `run_in_background=true`. Use sync mode for session continuation.
+  
+  Example: `"task-1234567890"`
+</ParamField>
+
+## Response
+
+<ResponseField name="output" type="string">
+  Agent execution result or task_id
+  
+  **Synchronous mode** (`run_in_background=false`):
+  ```
+  ## Exploration Results
+  
+  I found 3 authentication patterns:
+  
+  1. JWT authentication in src/auth/jwt.ts:45
+  2. OAuth flow in src/auth/oauth.ts:120
+  3. Session management in src/auth/session.ts:78
+  
+  Each pattern uses a different approach...
+  ```
+  
+  **Asynchronous mode** (`run_in_background=true`):
+  ```
+  Task launched successfully. Task ID: bg-task-1234567890
+  
+  Use background_output(task_id="bg-task-1234567890") to check status.
+  ```
+</ResponseField>
+
+## Execution modes
+
+### Synchronous execution
+
+Use `run_in_background=false` when you need the result immediately:
+
+```python
+call_omo_agent(
+  description="Find auth patterns",
+  prompt="Explore authentication implementations in src/auth/",
+  subagent_type="explore",
+  run_in_background=False
+)
+```
+
+The tool waits for completion and returns the full result.
+
+### Asynchronous execution
+
+Use `run_in_background=true` for parallel work or long-running tasks:
+
+```python
+# Launch async task
+task_id = call_omo_agent(
+  description="Research API docs",
+  prompt="Find Stripe API documentation for payment intents",
+  subagent_type="librarian",
+  run_in_background=True
+)
+
+# Later, poll for results
+background_output(task_id=task_id)
+```
+
+## Session continuation
+
+Resume an existing agent session with full context:
+
+```python
+# First call
+result = call_omo_agent(
+  description="Initial exploration",
+  prompt="Find all React components",
+  subagent_type="explore",
+  run_in_background=False
+)
+
+# Extract session_id from result metadata
+session_id = result.metadata["sessionId"]
+
+# Continue in same session
+call_omo_agent(
+  description="Follow-up question",
+  prompt="Now find which components use hooks",
+  subagent_type="explore",
+  run_in_background=False,
+  session_id=session_id
+)
+```
+
+Session continuation:
+- Preserves full conversation history
+- Maintains agent context and memory
+- Saves tokens by avoiding repeated context
+- Only works with synchronous mode
+
+## Common patterns
+
+### Parallel exploration
+
+Launch multiple agents in parallel:
+
+```python
+# Launch multiple background tasks
+task1 = call_omo_agent(
+  description="Explore frontend",
+  prompt="Map out React component structure",
+  subagent_type="explore",
+  run_in_background=True
+)
+
+task2 = call_omo_agent(
+  description="Explore backend",
+  prompt="Find all API endpoints",
+  subagent_type="explore",
+  run_in_background=True
+)
+
+task3 = call_omo_agent(
+  description="Research docs",
+  prompt="Find Next.js 14 app router documentation",
+  subagent_type="librarian",
+  run_in_background=True
+)
+
+# Poll all results
+background_output(task_id=task1)
+background_output(task_id=task2)
+background_output(task_id=task3)
+```
+
+### Sequential analysis
+
+Chain agent calls with session continuation:
+
+```python
+# Step 1: Initial analysis
+result = call_omo_agent(
+  description="Analyze patterns",
+  prompt="Identify architectural patterns in the codebase",
+  subagent_type="oracle",
+  run_in_background=False
+)
+
+session_id = result.metadata["sessionId"]
+
+# Step 2: Deep dive
+call_omo_agent(
+  description="Pattern details",
+  prompt="Explain the dependency injection pattern you found",
+  subagent_type="oracle",
+  run_in_background=False,
+  session_id=session_id
+)
+
+# Step 3: Recommendations
+call_omo_agent(
+  description="Improvements",
+  prompt="Suggest improvements to the current pattern",
+  subagent_type="oracle",
+  run_in_background=False,
+  session_id=session_id
+)
+```
+
+## Error handling
+
+### Invalid agent
+
+```
+Error: Invalid agent type "researcher". Only explore, librarian, oracle, hephaestus, metis, momus, multimodal-looker are allowed.
+```
+
+### Disabled agent
+
+```
+Error: Agent "oracle" is disabled via disabled_agents configuration. Remove it from disabled_agents in your oh-my-opencode.json to use it.
+```
+
+### Session continuation with background mode
+
+```
+Error: session_id is not supported in background mode. Use run_in_background=false to continue an existing session.
+```
+
+## Implementation details
+
+### Validation
+
+Agent names are validated case-insensitively against the allowed list. The tool normalizes the agent name to lowercase before execution.
+
+### Model selection
+
+Each agent has its own model fallback chain defined in the agent configuration. The tool does not use category-based model selection.
+
+### Background execution
+
+Background tasks are managed by `BackgroundManager` and follow the same lifecycle as tasks launched via the `task` tool.
+
+### Sync execution flow
+
+1. Create OpenCode session for the agent
+2. Send prompt to session
+3. Poll until session is idle
+4. Extract result from last assistant message
+5. Return result with metadata
+
+## Related tools
+
+- [task](/api/tools/task) - Full delegation with categories and skills
+- [background_output](/api/tools/background-task) - Poll background task results
+- [background_cancel](/api/tools/background-task) - Cancel background tasks

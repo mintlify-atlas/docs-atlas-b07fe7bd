@@ -1,0 +1,546 @@
+---
+title: grep
+description: Fast content search with regex support and safety limits
+---
+
+## Overview
+
+The `grep` tool provides fast content search using ripgrep with regex pattern matching. Use this when you need to find files containing specific patterns.
+
+**Source**: `src/tools/grep/`
+
+## Implementation
+
+Uses ripgrep (`rg`) with:
+
+- 60 second timeout
+- 256KB output limit
+- Full regex syntax support
+- Multiple output modes
+- File pattern filtering
+
+## Parameters
+
+<ParamField path="pattern" type="string" required>
+  The regex pattern to search for in file contents
+  
+  Examples:
+  - `"function authenticate"` - Literal string
+  - `"log.*Error"` - Regex pattern
+  - `"function\s+\w+\("` - Function declarations
+  - `"TODO|FIXME"` - Multiple patterns
+  - `"^import .* from"` - Line-anchored pattern
+  
+  **Syntax**: Full regex support (Rust regex)
+  - `.` - Any character
+  - `*` - Zero or more
+  - `+` - One or more
+  - `?` - Zero or one
+  - `^` - Line start
+  - `$` - Line end
+  - `\s` - Whitespace
+  - `\w` - Word character
+  - `[abc]` - Character class
+  - `(a|b)` - Alternation
+</ParamField>
+
+<ParamField path="include" type="string">
+  File pattern to include in the search
+  
+  Examples:
+  - `"*.js"` - JavaScript files only
+  - `"*.{ts,tsx}"` - TypeScript files
+  - `"test/**/*.js"` - Test files only
+  
+  Uses glob pattern syntax.
+</ParamField>
+
+<ParamField path="path" type="string">
+  The directory to search in
+  
+  Defaults to current working directory.
+  
+  Example: `"src/components"`
+</ParamField>
+
+<ParamField path="output_mode" type="enum">
+  Output format
+  
+  - `"files_with_matches"` - Only file paths (default, fastest)
+  - `"content"` - Matching lines with context
+  - `"count"` - Match counts per file
+  
+  **Default**: `"files_with_matches"`
+</ParamField>
+
+<ParamField path="head_limit" type="number">
+  Limit output to first N entries
+  
+  `0` or omitted means no limit.
+  
+  Example: `head_limit: 10` returns first 10 matches.
+</ParamField>
+
+## Response
+
+<ResponseField name="output" type="string">
+  Search results in requested format
+  
+  **files_with_matches mode**:
+  ```
+  Found 5 files containing "authenticate":
+  
+  src/auth/login.ts
+  src/auth/session.ts
+  src/middleware/auth.ts
+  tests/auth.test.ts
+  docs/authentication.md
+  ```
+  
+  **content mode**:
+  ```
+  Found 8 matches in 3 files:
+  
+  src/auth/login.ts
+  45: export function authenticate(username: string, password: string) {
+  67:   const token = await authenticateUser(credentials);
+  
+  src/auth/session.ts
+  23: async function authenticateSession(token: string) {
+  ```
+  
+  **count mode**:
+  ```
+  Match counts for "authenticate":
+  
+  src/auth/login.ts: 12 matches
+  src/auth/session.ts: 5 matches
+  tests/auth.test.ts: 8 matches
+  
+  Total: 25 matches in 3 files
+  ```
+  
+  **No matches**:
+  ```
+  No matches found for "nonexistent"
+  ```
+  
+  **Error**:
+  ```
+  Error: invalid regex pattern
+  ```
+</ResponseField>
+
+## Output modes
+
+### files_with_matches (default)
+
+Fastest mode. Returns only file paths:
+
+```python
+grep(pattern="TODO", output_mode="files_with_matches")
+```
+
+Use when you just need to know which files contain the pattern.
+
+### content
+
+Returns matching lines with line numbers:
+
+```python
+grep(pattern="function authenticate", output_mode="content")
+```
+
+Use when you need to see the actual matches.
+
+### count
+
+Returns match counts per file:
+
+```python
+grep(pattern="TODO", output_mode="count")
+```
+
+Use for statistics and metrics.
+
+## Usage examples
+
+### Find files containing pattern
+
+```python
+# Default mode (fastest)
+grep(pattern="authenticate")
+
+# Explicit files_with_matches
+grep(pattern="authenticate", output_mode="files_with_matches")
+```
+
+### Search with file filter
+
+```python
+# Only TypeScript files
+grep(pattern="interface", include="*.ts")
+
+# Only test files
+grep(pattern="describe\(", include="*.test.{ts,js}")
+```
+
+### View matching lines
+
+```python
+# See actual matches
+grep(pattern="function authenticate", output_mode="content")
+
+# Limit to first 10 matches
+grep(pattern="TODO", output_mode="content", head_limit=10)
+```
+
+### Count matches
+
+```python
+# Count TODOs
+grep(pattern="TODO", output_mode="count")
+
+# Count matches in specific files
+grep(pattern="FIXME", include="*.ts", output_mode="count")
+```
+
+### Search specific directory
+
+```python
+grep(pattern="import", path="src/components")
+```
+
+### Regex patterns
+
+```python
+# Function declarations
+grep(pattern="function\s+\w+\(")
+
+# Import statements
+grep(pattern="^import .* from")
+
+# TODOs or FIXMEs
+grep(pattern="TODO|FIXME")
+
+# Error handling
+grep(pattern="catch\s*\([^)]+\)\s*\{")
+```
+
+## Common patterns
+
+### Find imports
+
+```python
+# All imports
+grep(pattern="^import")
+
+# Specific package
+grep(pattern="from ['\"]react['\"]")
+
+# Default imports
+grep(pattern="^import \w+ from")
+```
+
+### Find function definitions
+
+```python
+# Function keyword
+grep(pattern="function\s+\w+")
+
+# Arrow functions
+grep(pattern="const\s+\w+\s*=\s*\([^)]*\)\s*=>")
+
+# Async functions
+grep(pattern="async\s+function")
+```
+
+### Find TODO/FIXME comments
+
+```python
+# All TODOs
+grep(pattern="TODO", output_mode="count")
+
+# TODOs with context
+grep(pattern="TODO:", output_mode="content")
+
+# FIXMEs in TypeScript
+grep(pattern="FIXME", include="*.ts")
+```
+
+### Find error handling
+
+```python
+# Try-catch blocks
+grep(pattern="try\s*\{")
+
+# Error throwing
+grep(pattern="throw new")
+
+# Error logging
+grep(pattern="console.error|logger.error")
+```
+
+### Find API endpoints
+
+```python
+# Express routes
+grep(pattern="app\.(get|post|put|delete)")
+
+# Fetch calls
+grep(pattern="fetch\(")
+
+# Axios calls
+grep(pattern="axios\.(get|post)")
+```
+
+## Safety limits
+
+### Timeout
+
+Searches timeout after 60 seconds:
+
+```
+Error: Timeout after 60000ms
+```
+
+Refine your pattern or search a smaller directory.
+
+### Output limit
+
+Output is limited to 256KB (about 3000 lines):
+
+```
+[Output truncated at 256KB. Refine your search for full results.]
+```
+
+Use `head_limit` or more specific patterns.
+
+## Head limit
+
+Limit results to first N entries:
+
+```python
+# First 10 files
+grep(pattern="TODO", head_limit=10)
+
+# First 5 matches with content
+grep(pattern="function", output_mode="content", head_limit=5)
+```
+
+Useful for large result sets.
+
+## Ripgrep integration
+
+The tool uses ripgrep with mode-specific flags:
+
+**files_with_matches**:
+```bash
+rg --files-with-matches pattern
+```
+
+**content**:
+```bash
+rg --line-number pattern
+```
+
+**count**:
+```bash
+rg --count pattern
+```
+
+Ripgrep is fast because it:
+- Uses memory maps for fast I/O
+- Respects `.gitignore` automatically
+- Skips binary files
+- Supports parallel search
+
+## Regex syntax
+
+Ripgrep uses Rust regex syntax (similar to PCRE):
+
+### Character classes
+
+- `\d` - Digit
+- `\w` - Word character
+- `\s` - Whitespace
+- `\D`, `\W`, `\S` - Negations
+- `[abc]` - Character set
+- `[^abc]` - Negated set
+
+### Quantifiers
+
+- `*` - 0 or more
+- `+` - 1 or more
+- `?` - 0 or 1
+- `{n}` - Exactly n
+- `{n,}` - n or more
+- `{n,m}` - Between n and m
+
+### Anchors
+
+- `^` - Start of line
+- `$` - End of line
+- `\b` - Word boundary
+
+### Groups
+
+- `(pattern)` - Capture group
+- `(?:pattern)` - Non-capture group
+- `(a|b)` - Alternation
+
+### Examples
+
+```python
+# Email addresses
+grep(pattern="\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
+
+# URLs
+grep(pattern="https?://[^\s]+")
+
+# Hex colors
+grep(pattern="#[0-9a-fA-F]{6}")
+
+# Function calls
+grep(pattern="\w+\([^)]*\)")
+```
+
+## Case sensitivity
+
+By default, searches are case-sensitive:
+
+```python
+# Case-sensitive (matches "TODO" only)
+grep(pattern="TODO")
+
+# Case-insensitive (matches "todo", "TODO", "Todo")
+grep(pattern="(?i)todo")
+```
+
+Use `(?i)` prefix for case-insensitive search.
+
+## Error handling
+
+### Invalid regex
+
+```
+Error: regex parse error:
+    unclosed
+    ^
+unclosed group
+```
+
+Check your regex syntax:
+- Unmatched parentheses
+- Invalid escape sequences
+- Unclosed brackets
+
+### Ripgrep not found
+
+```
+Error: ripgrep not found. Install ripgrep or add it to PATH.
+```
+
+Install ripgrep (see [glob tool](/api/tools/glob#auto-installation)).
+
+### Permission denied
+
+```
+Error: Permission denied
+```
+
+Check directory permissions or search a different path.
+
+## Performance tips
+
+### Use file filters
+
+Instead of:
+```python
+grep(pattern="import")
+```
+
+Use:
+```python
+grep(pattern="import", include="*.ts")
+```
+
+### Use files_with_matches for discovery
+
+Instead of:
+```python
+grep(pattern="authenticate", output_mode="content")
+```
+
+First:
+```python
+grep(pattern="authenticate")  # Fast discovery
+```
+
+Then:
+```python
+grep(pattern="authenticate", output_mode="content", path="src/auth")  # Focused search
+```
+
+### Limit output
+
+Instead of:
+```python
+grep(pattern="function", output_mode="content")
+```
+
+Use:
+```python
+grep(pattern="function", output_mode="content", head_limit=20)
+```
+
+## Comparison with other tools
+
+| Feature | grep | grep (Unix) | ag | ast-grep |
+|---------|------|-------------|----|-----------|
+| Speed | Very fast | Slow | Fast | Fast |
+| Regex | Full | Basic/Extended | Full | Structural |
+| Gitignore | Auto | Manual | Auto | Manual |
+| Limits | Yes | No | No | No |
+| Syntax | Regex | Regex | Regex | AST patterns |
+
+For code search, use `grep` for speed and safety.
+
+For structural search (syntax-aware), use `ast_grep`.
+
+## Implementation details
+
+### CLI execution
+
+Executes ripgrep via `runRg()` or `runRgCount()`:
+
+```typescript
+const result = await runRg({
+  pattern: args.pattern,
+  paths: [searchPath],
+  globs: args.include ? [args.include] : undefined,
+  context: 0,
+  outputMode,
+  headLimit,
+})
+```
+
+### Result formatting
+
+Results are formatted by `formatGrepResult()` or `formatCountResult()`:
+
+- Adds context headers
+- Formats line numbers
+- Handles empty results
+- Adds truncation warnings
+
+### Thread limiting
+
+Ripgrep thread count is limited to prevent resource exhaustion.
+
+## Related tools
+
+- [glob](/api/tools/glob) - File pattern matching
+- [ast_grep](/api/tools/ast-grep) - Structural code search
+- [read](/api/tools/read) - Read file contents
+- [bash](/api/tools/bash) - Execute shell commands

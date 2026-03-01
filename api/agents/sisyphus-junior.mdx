@@ -1,0 +1,453 @@
+---
+title: "Sisyphus Junior Agent"
+description: "Category-spawned executor with model selection based on task category (quick, deep, artistry, etc.)"
+---
+
+## Overview
+
+Sisyphus Junior is a dynamically configured executor agent that spawns from category selection. Unlike other agents with fixed models, Junior's model and configuration depend entirely on which category the user selects or Sisyphus assigns.
+
+**Identity**: Flexible executor that adapts to task requirements through category-driven model selection.
+
+<ParamField path="model" type="string" default="varies by category">
+  Model determined by category selection (quick → haiku, deep → codex, artistry → gemini, etc.)
+</ParamField>
+
+<ParamField path="mode" type="string" default="all">
+  Available in both primary and subagent contexts
+</ParamField>
+
+<ParamField path="temperature" type="number" default="varies by category">
+  Temperature adjusts based on category (typically 0.1 for code, higher for creative tasks)
+</ParamField>
+
+## Category-Based Configuration
+
+Sisyphus Junior's configuration is determined by the task category:
+
+### Quick Category
+
+```json
+{
+  "model": "claude-haiku-4-5",
+  "temperature": 0.1,
+  "category": "quick"
+}
+```
+
+**Fallback chain**: `claude-haiku-4-5` → `gemini-3-flash` → `gpt-5-nano`
+
+**Use for**: Fast, simple tasks - typo fixes, log additions, minor tweaks
+
+### Deep Category
+
+```json
+{
+  "model": "gpt-5.3-codex",
+  "variant": "medium",
+  "temperature": 0.1,
+  "category": "deep",
+  "reasoningEffort": "medium"
+}
+```
+
+**Fallback chain**: `gpt-5.3-codex` → `claude-opus-4-6` → `gemini-3.1-pro`
+
+**Use for**: Complex implementation requiring deep reasoning
+
+**Requirement**: Only activates when `gpt-5.3-codex` is available
+
+### Artistry Category
+
+```json
+{
+  "model": "gemini-3.1-pro",
+  "variant": "high",
+  "temperature": 0.1,
+  "category": "artistry"
+}
+```
+
+**Fallback chain**: `gemini-3.1-pro` → `claude-opus-4-6` → `gpt-5.2`
+
+**Use for**: Frontend, UI/UX, design-heavy work
+
+**Requirement**: Only activates when `gemini-3.1-pro` is available
+
+### Visual Engineering Category
+
+```json
+{
+  "model": "gemini-3.1-pro",
+  "variant": "high",
+  "temperature": 0.1,
+  "category": "visual-engineering"
+}
+```
+
+**Fallback chain**: `gemini-3.1-pro` → `glm-5` → `claude-opus-4-6`
+
+**Use for**: Visual content, image processing, multimodal tasks
+
+### Ultrabrain Category
+
+```json
+{
+  "model": "gpt-5.3-codex",
+  "variant": "xhigh",
+  "temperature": 0.1,
+  "category": "ultrabrain",
+  "reasoningEffort": "high"
+}
+```
+
+**Fallback chain**: `gpt-5.3-codex` → `gemini-3.1-pro` → `claude-opus-4-6`
+
+**Use for**: Most challenging tasks requiring maximum reasoning capacity
+
+### Writing Category
+
+```json
+{
+  "model": "kimi-k2.5-free",
+  "temperature": 0.3,
+  "category": "writing"
+}
+```
+
+**Fallback chain**: `kimi-k2.5-free` → `gemini-3-flash` → `claude-sonnet-4-6`
+
+**Use for**: Documentation, content creation, text-heavy work
+
+### Unspecified-Low Category
+
+```json
+{
+  "model": "claude-sonnet-4-6",
+  "temperature": 0.1,
+  "category": "unspecified-low"
+}
+```
+
+**Fallback chain**: `claude-sonnet-4-6` → `gpt-5.3-codex` → `gemini-3-flash`
+
+**Use for**: General tasks without specific category fit
+
+### Unspecified-High Category
+
+```json
+{
+  "model": "claude-opus-4-6",
+  "variant": "max",
+  "temperature": 0.1,
+  "category": "unspecified-high"
+}
+```
+
+**Fallback chain**: `claude-opus-4-6` → `gpt-5.2` → `gemini-3.1-pro`
+
+**Use for**: Important general tasks needing high-quality reasoning
+
+## Custom Categories
+
+You can define custom categories in `oh-my-opencode.jsonc`:
+
+```jsonc
+{
+  "categories": {
+    "database-work": {
+      "model": "anthropic/claude-opus-4-6",
+      "variant": "max",
+      "description": "Database schema design, complex queries, migrations",
+      "skill": "sql-expert"
+    },
+    "api-design": {
+      "model": "openai/gpt-5.2",
+      "variant": "high",
+      "description": "REST/GraphQL API design and implementation",
+      "skills": ["api-patterns", "openapi-spec"]
+    }
+  }
+}
+```
+
+When Sisyphus Junior spawns with a custom category, it uses that category's configuration.
+
+## Tool Permissions
+
+Sisyphus Junior inherits tool permissions from the spawning context and category configuration. By default, Junior has access to:
+
+### Allowed Tools (All Implementation Tools)
+
+- `read` - Read files
+- `write` - Create new files
+- `edit` - Modify existing files
+- `grep` - Search file contents
+- `glob` - Find files by pattern
+- `bash` - Execute commands
+- `ast_grep` - AST-aware code operations
+- `lsp_*` - All LSP tools for code intelligence
+- `apply_patch` - Apply code changes
+
+### Optional Restrictions
+
+Categories can restrict tools:
+
+```jsonc
+{
+  "categories": {
+    "read-only-analysis": {
+      "model": "anthropic/claude-opus-4-6",
+      "description": "Analysis without modifications",
+      "restrict_tools": ["write", "edit", "apply_patch"]
+    }
+  }
+}
+```
+
+## How Category Selection Works
+
+### User-Specified Category
+
+```typescript
+// User explicitly selects category
+task(
+  category="deep",
+  description="Implement complex authentication flow",
+  prompt="Build JWT auth with refresh tokens, role-based access, and audit logging."
+)
+
+// Sisyphus Junior spawns with deep category configuration:
+// - Model: gpt-5.3-codex
+// - Variant: medium
+// - ReasoningEffort: medium
+```
+
+### Sisyphus Auto-Assignment
+
+When user doesn't specify category, Sisyphus analyzes the task and assigns appropriate category:
+
+```typescript
+// User request (no category specified)
+"Fix the typo in README.md line 42"
+
+// Sisyphus analyzes → assigns "quick" category
+// Sisyphus Junior spawns with quick category:
+// - Model: claude-haiku-4-5
+// - Fast, lightweight execution
+```
+
+### Category Override in Config
+
+Override category defaults:
+
+```jsonc
+{
+  "categories": {
+    "quick": {
+      "model": "openai/gpt-5-nano",  // Override default haiku
+      "temperature": 0.0
+    }
+  }
+}
+```
+
+## Skill Integration
+
+Categories can automatically load skills:
+
+```jsonc
+{
+  "categories": {
+    "visual-engineering": {
+      "model": "google/gemini-3.1-pro",
+      "description": "Visual content and image processing",
+      "skills": ["image-processing", "opencv-patterns"]
+    }
+  }
+}
+```
+
+When Junior spawns with this category, specified skills are automatically loaded into context.
+
+## Usage Examples
+
+### Example 1: Quick Task
+
+```typescript
+// User: "Add a console.log to track user login events"
+
+// Sisyphus analyzes → category: quick
+// Spawns Sisyphus Junior with:
+task(
+  category="quick",
+  model="claude-haiku-4-5",
+  description="Add login tracking log",
+  prompt="Add console.log to auth.ts login handler to log user email and timestamp."
+)
+
+// Junior executes quickly with lightweight model
+```
+
+### Example 2: Deep Implementation
+
+```typescript
+// User: "Implement distributed rate limiting with Redis"
+
+// Sisyphus analyzes → category: deep (complex implementation)
+// Spawns Sisyphus Junior with:
+task(
+  category="deep",
+  model="gpt-5.3-codex",
+  variant="medium",
+  reasoningEffort="medium",
+  description="Implement distributed rate limiter",
+  prompt="Build rate limiting middleware using Redis:
+          - Token bucket algorithm
+          - Per-user and per-IP limits
+          - Configurable limits per endpoint
+          - Proper error handling and fallback"
+)
+
+// Junior uses high-reasoning model for complex logic
+```
+
+### Example 3: Artistry Work
+
+```typescript
+// User: "Design a responsive dashboard layout with modern UI"
+
+// Sisyphus analyzes → category: artistry (design-heavy)
+// Spawns Sisyphus Junior with:
+task(
+  category="artistry",
+  model="gemini-3.1-pro",
+  variant="high",
+  description="Design responsive dashboard",
+  prompt="Create dashboard layout:
+          - Responsive grid (mobile, tablet, desktop)
+          - Modern design with Tailwind CSS
+          - Data visualization cards
+          - Dark mode support
+          - Smooth transitions"
+)
+
+// Junior uses Gemini for design and visual tasks
+```
+
+### Example 4: Custom Category
+
+```typescript
+// Config defines custom category
+// oh-my-opencode.jsonc:
+{
+  "categories": {
+    "security-audit": {
+      "model": "anthropic/claude-opus-4-6",
+      "variant": "max",
+      "description": "Security analysis and vulnerability detection",
+      "skill": "security-patterns"
+    }
+  }
+}
+
+// User explicitly uses custom category
+task(
+  category="security-audit",
+  description="Audit authentication system",
+  prompt="Review auth implementation for security vulnerabilities:
+          - SQL injection risks
+          - XSS vulnerabilities
+          - CSRF protection
+          - Password handling
+          - Session management"
+)
+
+// Junior spawns with security-audit configuration
+// - Uses Claude Opus with max variant
+// - Loads security-patterns skill
+```
+
+## Model Selection Logic
+
+Junior's model is resolved through 4-step pipeline:
+
+<Steps>
+  <Step title="Category selection">
+    User specifies or Sisyphus auto-assigns category
+  </Step>
+  <Step title="Category configuration">
+    Look up category in config (custom or default)
+  </Step>
+  <Step title="Model resolution">
+    Apply category's model with fallback chain from `CATEGORY_MODEL_REQUIREMENTS`
+  </Step>
+  <Step title="Availability check">
+    If primary model unavailable, walk fallback chain until available model found
+  </Step>
+</Steps>
+
+## Comparison with Other Agents
+
+### Sisyphus vs Sisyphus Junior
+
+<ResponseField name="Sisyphus (Primary)" type="string">
+  Orchestrator, planner, delegator - Uses fixed model (claude-opus-4-6)
+</ResponseField>
+
+<ResponseField name="Sisyphus Junior (Executor)" type="string">
+  Executor spawned by Sisyphus - Model varies by category
+</ResponseField>
+
+### Hephaestus vs Sisyphus Junior
+
+<ResponseField name="Hephaestus (Primary)" type="string">
+  Autonomous deep worker - Fixed model (gpt-5.3-codex), requires GPT access
+</ResponseField>
+
+<ResponseField name="Sisyphus Junior (Executor)" type="string">
+  Category-adaptive executor - Model changes per task, works with any provider
+</ResponseField>
+
+## Best Practices
+
+<Check>**Let Sisyphus choose category** - Auto-assignment is usually accurate</Check>
+<Check>**Override for special cases** - Explicitly set category when you know task needs specific model</Check>
+<Check>**Define custom categories** - For recurring specialized work types</Check>
+<Check>**Use skills with categories** - Auto-load relevant skills per category</Check>
+
+<Warning>**Don't over-categorize** - Too many custom categories creates confusion</Warning>
+<Warning>**Don't force ultrabrain** - Reserve for genuinely complex tasks</Warning>
+<Warning>**Don't restrict tools unnecessarily** - Only when truly needed for safety</Warning>
+
+## Configuration
+
+Customize Sisyphus Junior through categories in `oh-my-opencode.jsonc`:
+
+```jsonc
+{
+  "categories": {
+    // Override built-in category
+    "quick": {
+      "model": "openai/gpt-5-nano",
+      "temperature": 0.0
+    },
+    
+    // Define custom category
+    "testing": {
+      "model": "anthropic/claude-sonnet-4-6",
+      "description": "Test writing and debugging",
+      "skills": ["jest-patterns", "testing-library"]
+    }
+  },
+  
+  // Disable specific categories
+  "disabled_categories": ["ultrabrain"]
+}
+```
+
+## Related Agents
+
+- [Sisyphus](/api/agents/sisyphus) - Primary orchestrator that spawns Junior
+- [Hephaestus](/api/agents/hephaestus) - Alternative primary agent (fixed GPT model)
+- [Atlas](/api/agents/atlas) - Todo-list orchestrator (also spawns Junior)

@@ -1,0 +1,590 @@
+---
+title: "Metis Agent"
+description: "Pre-planning consultant that identifies ambiguities, hidden intentions, and AI failure points before work begins"
+---
+
+## Overview
+
+Metis is a pre-planning consultant named after the Greek goddess of wisdom, prudence, and deep counsel. She analyzes user requests BEFORE planning to prevent AI failures by identifying hidden intentions, detecting ambiguities, and flagging potential AI-slop patterns.
+
+**Identity**: Strategic advisor who asks clarifying questions and prepares directives to guide the planner agent toward successful implementation.
+
+<ParamField path="model" type="string" default="claude-opus-4-6">
+  High-reasoning model optimized for analysis and strategic thinking
+</ParamField>
+
+<ParamField path="mode" type="string" default="subagent">
+  Invoked before planning complex or ambiguous tasks
+</ParamField>
+
+<ParamField path="temperature" type="number" default="0.3">
+  Higher temperature than other agents for creative problem exploration
+</ParamField>
+
+<ParamField path="thinking" type="object">
+  Extended thinking enabled with 32,000 token budget for deep analysis
+</ParamField>
+
+## Model Configuration
+
+### Default Model (Claude)
+
+```json
+{
+  "model": "claude-opus-4-6",
+  "variant": "max",
+  "temperature": 0.3,
+  "thinking": {
+    "type": "enabled",
+    "budgetTokens": 32000
+  }
+}
+```
+
+### GPT Variant
+
+```json
+{
+  "model": "gpt-5.2",
+  "variant": "high",
+  "temperature": 0.3,
+  "reasoningEffort": "high"
+}
+```
+
+### Gemini Variant
+
+```json
+{
+  "model": "gemini-3.1-pro",
+  "variant": "high",
+  "temperature": 0.3
+}
+```
+
+## Fallback Chain
+
+Metis prioritizes high-reasoning models for strategic analysis:
+
+<ResponseField name="Primary" type="string">
+  `anthropic/claude-opus-4-6` (variant: max)
+</ResponseField>
+
+<ResponseField name="Fallback 1" type="string">
+  `opencode/kimi-k2.5-free`
+</ResponseField>
+
+<ResponseField name="Fallback 2" type="string">
+  `openai/gpt-5.2` (variant: high)
+</ResponseField>
+
+<ResponseField name="Fallback 3" type="string">
+  `google/gemini-3.1-pro` (variant: high)
+</ResponseField>
+
+## Tool Permissions
+
+### Allowed Tools (Read and Analysis)
+
+- `read` - Read files for context
+- `grep` - Search file contents
+- `glob` - Find files by pattern
+- `ast_grep` - AST-aware code search
+- `lsp_*` - All LSP tools for code intelligence
+- `bash` - Run read-only commands
+- `call_omo_agent` - Launch explore/librarian agents for discovery
+
+### Blocked Tools (Write and Delegation)
+
+<ParamField path="write" type="string" default="deny">
+  Cannot create files (analysis only)
+</ParamField>
+
+<ParamField path="edit" type="string" default="deny">
+  Cannot modify files (advisory role)
+</ParamField>
+
+<ParamField path="apply_patch" type="string" default="deny">
+  Cannot apply code changes
+</ParamField>
+
+<ParamField path="task" type="string" default="deny">
+  Cannot delegate implementation tasks
+</ParamField>
+
+<Note>
+  Metis is READ-ONLY with agent consultation capability. She analyzes, questions, and advises - but never implements.
+</Note>
+
+## When to Use Metis
+
+### Recommended Scenarios
+
+<Check>**Ambiguous requests** - User request lacks clear requirements or scope</Check>
+<Check>**Complex tasks** - Non-trivial work requiring upfront planning</Check>
+<Check>**Open-ended features** - "Add feature" without specifics</Check>
+<Check>**Refactoring work** - Ensure behavior preservation is defined</Check>
+<Check>**Architecture decisions** - Strategic choices requiring analysis</Check>
+<Check>**Build from scratch** - Discover patterns before questioning user</Check>
+
+### Avoid Metis For
+
+<Warning>**Simple, well-defined tasks** - "Fix typo in README", "Add console.log"</Warning>
+<Warning>**Already detailed requirements** - User provided comprehensive specifications</Warning>
+<Warning>**Trivial changes** - Minor tweaks don't need pre-planning</Warning>
+<Warning>**Urgent fixes** - When speed matters more than perfect planning</Warning>
+
+## Intent Classification
+
+Metis ALWAYS starts by classifying the work intent. This determines her entire strategy.
+
+### Intent Types
+
+<ResponseField name="Refactoring" type="string">
+  Restructuring existing code - **Focus**: Regression prevention, behavior preservation
+</ResponseField>
+
+<ResponseField name="Build from Scratch" type="string">
+  Creating new features/modules - **Focus**: Discover patterns first, informed questions
+</ResponseField>
+
+<ResponseField name="Mid-sized Task" type="string">
+  Scoped feature with bounded work - **Focus**: Exact deliverables, explicit exclusions
+</ResponseField>
+
+<ResponseField name="Collaborative" type="string">
+  User wants dialogue - **Focus**: Incremental clarity through conversation
+</ResponseField>
+
+<ResponseField name="Architecture" type="string">
+  System design decisions - **Focus**: Long-term impact, Oracle consultation
+</ResponseField>
+
+<ResponseField name="Research" type="string">
+  Investigation needed - **Focus**: Exit criteria, parallel probes
+</ResponseField>
+
+## AI-Slop Prevention
+
+Metis actively guards against common AI over-engineering patterns:
+
+<ResponseField name="Scope inflation" type="string">
+  "Also add tests for adjacent modules" → Ask: "Should I test beyond [TARGET]?"
+</ResponseField>
+
+<ResponseField name="Premature abstraction" type="string">
+  "Extracted to utility" → Ask: "Do you want abstraction, or inline?"
+</ResponseField>
+
+<ResponseField name="Over-validation" type="string">
+  "15 error checks for 3 inputs" → Ask: "Error handling: minimal or comprehensive?"
+</ResponseField>
+
+<ResponseField name="Documentation bloat" type="string">
+  "Added JSDoc everywhere" → Ask: "Documentation: none, minimal, or full?"
+</ResponseField>
+
+## Output Format
+
+Metis provides structured analysis that feeds directly into Prometheus (planner):
+
+### Intent Classification
+
+```markdown
+## Intent Classification
+**Type**: [Refactoring | Build | Mid-sized | Collaborative | Architecture | Research]
+**Confidence**: [High | Medium | Low]
+**Rationale**: [Why this classification]
+```
+
+### Pre-Analysis Findings
+
+```markdown
+## Pre-Analysis Findings
+[Results from explore/librarian agents if launched]
+[Relevant codebase patterns discovered]
+```
+
+### Questions for User
+
+```markdown
+## Questions for User
+1. [Most critical question first]
+2. [Second priority]
+3. [Third priority]
+```
+
+### Directives for Prometheus
+
+```markdown
+## Directives for Prometheus
+
+### Core Directives
+- MUST: [Required action]
+- MUST: [Required action]
+- MUST NOT: [Forbidden action]
+- MUST NOT: [Forbidden action]
+- PATTERN: Follow `[file:lines]`
+- TOOL: Use `[specific tool]` for [purpose]
+
+### QA/Acceptance Criteria Directives (MANDATORY)
+- MUST: Write acceptance criteria as executable commands
+- MUST: Include exact expected outputs
+- MUST NOT: Create criteria requiring "user manually tests..."
+- MUST NOT: Use placeholders without concrete examples
+```
+
+## Critical Rules
+
+Metis follows strict analysis principles:
+
+### NEVER
+
+- Skip intent classification
+- Ask generic questions ("What's the scope?")
+- Proceed without addressing ambiguity
+- Make assumptions about user's codebase
+- Suggest acceptance criteria requiring user intervention
+- Leave QA criteria vague or placeholder-heavy
+
+### ALWAYS
+
+- Classify intent FIRST
+- Be specific ("Should this change UserService only, or also AuthService?")
+- Explore before asking (for Build/Research intents)
+- Provide actionable directives for Prometheus
+- Include QA automation directives in every output
+- Ensure acceptance criteria are agent-executable
+
+## Usage Examples
+
+### Example 1: Build from Scratch
+
+```typescript
+// User request
+"Add user authentication to the API"
+
+task(
+  subagent_type="metis",
+  description="Analyze authentication requirements",
+  prompt="User requested: Add user authentication to the API. 
+          Perform pre-planning analysis."
+)
+
+// Metis response:
+"## Intent Classification
+**Type**: Build from Scratch
+**Confidence**: High
+**Rationale**: New feature, no existing auth system mentioned
+
+## Pre-Analysis Findings
+
+Launched explore agent to find existing patterns:
+- Found Express.js app in `src/server.ts`
+- No existing auth middleware
+- Current endpoints: `/api/users`, `/api/posts` (no protection)
+- Uses PostgreSQL for data storage
+
+## Questions for User
+
+1. **Authentication method**: JWT tokens, sessions, or OAuth?
+   - JWT is stateless and works well with APIs
+   - Sessions require session storage (Redis)
+   - OAuth delegates to third-party (Google, GitHub)
+
+2. **What endpoints need protection?**
+   - All `/api/*` routes?
+   - Only specific routes (POST/PUT/DELETE)?
+   - Public read, protected write?
+
+3. **User registration flow**:
+   - Email/password signup?
+   - Email verification required?
+   - Social login options?
+
+4. **Password requirements**:
+   - Minimum length, special characters?
+   - Or follow existing company policy?
+
+5. **Scope boundaries** (AI-slop prevention):
+   - Add authentication ONLY, or also:
+     * Authorization (roles/permissions)?
+     * Password reset flow?
+     * Rate limiting?
+     * Refresh tokens?
+
+## Identified Risks
+
+- **Security misconfiguration**: JWT secrets, bcrypt rounds, token expiry
+  - Mitigation: Use environment variables, follow OWASP guidelines
+
+- **Backward compatibility**: Existing API clients may break
+  - Mitigation: Define migration strategy (grace period with opt-in?)
+
+- **Scope creep**: Auth often expands to roles, permissions, MFA
+  - Mitigation: Define explicit exclusions upfront
+
+## Directives for Prometheus
+
+### Core Directives
+- MUST: Follow Express middleware pattern from `src/server.ts:15-30`
+- MUST: Store passwords with bcrypt (12 rounds minimum)
+- MUST: Use environment variables for secrets (never hardcode)
+- MUST NOT: Add authorization (roles/permissions) unless explicitly requested
+- MUST NOT: Implement password reset flow unless explicitly requested
+- MUST NOT: Add OAuth providers unless explicitly requested
+- PATTERN: Follow error handling pattern from `src/middleware/error-handler.ts`
+
+### QA/Acceptance Criteria Directives (MANDATORY)
+- MUST: Write executable tests, not manual steps
+- MUST: Use curl commands for API verification
+- MUST: Include exact expected responses (JSON structure, status codes)
+- MUST NOT: Require "user manually tests login page"
+- MUST NOT: Use placeholders like "[your-token]" without concrete example
+
+Example of GOOD acceptance criteria:
+```bash
+# Register new user
+curl -X POST http://localhost:3000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"TestPass123!"}'
+# Expected: {"success":true,"userId":1}
+
+# Login
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"TestPass123!"}'
+# Expected: {"token":"eyJhbGc...","expiresIn":3600}
+
+# Access protected endpoint
+curl http://localhost:3000/api/users \
+  -H "Authorization: Bearer eyJhbGc..."
+# Expected: [{"id":1,"email":"test@example.com"}]
+```
+
+## Recommended Approach
+
+1. Get user answers to questions 1-5
+2. Consult librarian for JWT best practices
+3. Prometheus creates implementation plan following directives
+4. Plan must include executable acceptance tests"
+```
+
+### Example 2: Refactoring
+
+```typescript
+// User request
+"Refactor the authentication service to use a cleaner structure"
+
+task(
+  subagent_type="metis",
+  description="Analyze refactoring requirements",
+  prompt="User requested: Refactor the authentication service. 
+          Perform pre-planning analysis."
+)
+
+// Metis response:
+"## Intent Classification
+**Type**: Refactoring
+**Confidence**: High
+**Rationale**: Explicit refactor request, existing code modification
+
+## Pre-Analysis Findings
+
+Analyzed existing authentication service:
+- `src/services/auth.ts` (450 lines, multiple responsibilities)
+- Handles: token generation, password hashing, user validation, session management
+- Tests exist: `src/services/auth.test.ts` (28 tests, all passing)
+
+## Questions for User
+
+1. **Behavior preservation** (CRITICAL for refactoring):
+   - Must all 28 tests continue passing without modification?
+   - Or can we update tests if behavior intentionally changes?
+
+2. **Refactoring scope**:
+   - Restructure `auth.ts` only?
+   - Or also related files (middleware, routes)?
+
+3. **What specific structure issues?**:
+   - Too many responsibilities in one file?
+   - Unclear function naming?
+   - Hard to test?
+   - Performance problems?
+
+4. **Rollback strategy**:
+   - Can we use feature flag to toggle old/new implementation?
+   - Or is direct replacement acceptable?
+
+## Identified Risks
+
+- **Regression introduction**: Changing working code may break subtle behaviors
+  - Mitigation: Run full test suite after EACH file change, not just at end
+
+- **Adjacent code changes**: Refactor may require updating callers
+  - Mitigation: Use `lsp_find_references` to map all usages first
+
+- **Scope creep**: "Clean structure" may expand to adding new features
+  - Mitigation: Define "Must NOT change behavior" directive
+
+## Directives for Prometheus
+
+### Core Directives
+- MUST: Define pre-refactor verification (exact test command + expected output)
+- MUST: Use `lsp_find_references` to map all usages of functions being moved
+- MUST: Verify tests pass after EACH change, not just at the end
+- MUST: Use `lsp_rename` for safe symbol renames across codebase
+- MUST NOT: Change behavior while restructuring
+- MUST NOT: Add new features during refactoring
+- MUST NOT: Refactor adjacent code not explicitly in scope
+- TOOL: Use `ast_grep_replace(dryRun=true)` to preview transformations
+
+### Pre-Refactor Verification
+```bash
+bun test src/services/auth.test.ts
+# Expected: All 28 tests pass
+```
+
+### QA/Acceptance Criteria Directives
+- MUST: All original tests continue passing
+- MUST: Run tests after each intermediate commit
+- MUST: Verify authentication flow still works:
+```bash
+curl -X POST http://localhost:3000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"existing@user.com","password":"ExistingPass123"}'
+# Expected: Same response format as before refactoring
+```
+
+## Recommended Approach
+
+Refactoring should be incremental with verification at each step:
+1. Run and document pre-refactor baseline
+2. Use LSP tools to map dependencies
+3. Create plan with verification after each change
+4. NO behavior changes - structure only"
+```
+
+### Example 3: Architecture Decision
+
+```typescript
+// User request
+"How should we structure the new microservices architecture?"
+
+task(
+  subagent_type="metis",
+  description="Analyze architecture requirements",
+  prompt="User asked: How should we structure the new microservices? 
+          Perform pre-planning analysis."
+)
+
+// Metis response:
+"## Intent Classification
+**Type**: Architecture
+**Confidence**: High
+**Rationale**: System design decision with long-term implications
+
+## Questions for User
+
+1. **Why microservices?** (Verify need before proceeding)
+   - What specific problem are you solving?
+   - Current monolith issues: Performance? Team scaling? Deployment?
+   - Microservices add complexity - is the tradeoff justified?
+
+2. **Scale and constraints**:
+   - Expected request volume? (current and 12-month projection)
+   - Team size? (impacts coordination overhead)
+   - Deployment environment? (K8s? AWS ECS? Serverless?)
+
+3. **Service boundaries**:
+   - Bounded contexts already identified?
+   - Or need help defining service splits?
+
+4. **Non-negotiable constraints**:
+   - Technology stack requirements?
+   - Security/compliance needs?
+   - Budget limitations?
+
+5. **Integration requirements**:
+   - What existing systems must this integrate with?
+   - API compatibility requirements?
+
+## Directives for Prometheus
+
+### Core Directives
+- MUST: Consult Oracle agent before finalizing architecture plan
+- MUST: Document architectural decisions with rationale
+- MUST: Define "minimum viable architecture" (avoid over-engineering)
+- MUST NOT: Over-engineer for hypothetical future requirements
+- MUST NOT: Add unnecessary abstraction layers
+- MUST NOT: Ignore existing patterns for "better" design
+- MUST NOT: Introduce complexity without clear justification
+
+### Oracle Consultation
+```typescript
+task(
+  subagent_type="oracle",
+  prompt="Architecture consultation:
+  
+  Request: Microservices architecture design
+  Current state: [gathered context from user answers]
+  
+  Analyze:
+  - Architecture options and tradeoffs
+  - Service boundary recommendations
+  - Long-term implications
+  - Technical risks and mitigations
+  
+  Apply pragmatic minimalism: simplest solution that meets actual needs."
+)
+```
+
+## Recommended Approach
+
+1. Get user answers to validate microservices are appropriate
+2. If justified, consult Oracle for architectural analysis
+3. Prometheus incorporates Oracle's recommendations into plan
+4. Plan includes service boundaries, communication patterns, deployment strategy"
+```
+
+## Best Practices
+
+<Check>**Always classify intent first** - Determines entire analysis strategy</Check>
+<Check>**Use explore/librarian agents** - Gather context before asking questions</Check>
+<Check>**Ask specific questions** - "Should this change UserService only, or also AuthService?"</Check>
+<Check>**Flag AI-slop patterns** - Prevent over-engineering upfront</Check>
+<Check>**Provide actionable directives** - Give Prometheus clear guidance</Check>
+<Check>**Ensure executable QA** - No "user manually tests" criteria</Check>
+
+<Warning>**Don't skip exploration** - For Build/Research intents, discover patterns first</Warning>
+<Warning>**Don't ask generic questions** - "What's the scope?" is too vague</Warning>
+<Warning>**Don't make assumptions** - Question unclear requirements</Warning>
+
+## Configuration
+
+Customize Metis in `oh-my-opencode.jsonc`:
+
+```jsonc
+{
+  "agents": {
+    "metis": {
+      "model": "anthropic/claude-opus-4-6",
+      "variant": "max",
+      "temperature": 0.3,
+      "thinking": {
+        "type": "enabled",
+        "budgetTokens": 32000
+      },
+      "prompt_append": "Additional analysis guidelines...",
+      "disable": false
+    }
+  }
+}
+```
+
+## Related Agents
+
+- [Prometheus](/api/agents/prometheus) - Planner that receives Metis's directives
+- [Momus](/api/agents/momus) - Plan reviewer that validates Prometheus's output
+- [Oracle](/api/agents/oracle) - Architecture consultant for complex decisions
+- [Sisyphus](/api/agents/sisyphus) - Orchestrator that invokes Metis for ambiguous requests

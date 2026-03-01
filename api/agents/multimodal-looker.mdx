@@ -1,0 +1,373 @@
+---
+title: "Multimodal Looker Agent"
+description: "Visual content specialist that analyzes PDFs, images, and diagrams to extract specific information"
+---
+
+## Overview
+
+Multimodal Looker is a specialized agent for analyzing media files that cannot be read as plain text. It interprets PDFs, images, diagrams, and other visual content to extract specific information or provide summaries.
+
+**Identity**: Media interpretation specialist that saves context tokens by analyzing files and returning only requested information.
+
+<ParamField path="model" type="string" default="kimi-k2.5-free">
+  Multimodal-capable model optimized for vision and document analysis
+</ParamField>
+
+<ParamField path="mode" type="string" default="subagent">
+  Invoked by other agents when media analysis is needed
+</ParamField>
+
+<ParamField path="temperature" type="number" default="0.1">
+  Very low temperature for consistent, accurate extraction
+</ParamField>
+
+## Model Configuration
+
+### Default Model
+
+```json
+{
+  "model": "kimi-k2.5-free",
+  "temperature": 0.1
+}
+```
+
+### Gemini Variant
+
+```json
+{
+  "model": "gemini-3-flash",
+  "temperature": 0.1
+}
+```
+
+### GPT Variant
+
+```json
+{
+  "model": "gpt-5.2",
+  "temperature": 0.1
+}
+```
+
+## Fallback Chain
+
+Multimodal Looker uses the deepest fallback chain to ensure vision capabilities:
+
+<ResponseField name="Primary" type="string">
+  `opencode/kimi-k2.5-free`
+</ResponseField>
+
+<ResponseField name="Fallback 1" type="string">
+  `google/gemini-3-flash`
+</ResponseField>
+
+<ResponseField name="Fallback 2" type="string">
+  `openai/gpt-5.2`
+</ResponseField>
+
+<ResponseField name="Fallback 3" type="string">
+  `zai-coding-plan/glm-4.6v`
+</ResponseField>
+
+<ResponseField name="Fallback 4" type="string">
+  `openai/gpt-5-nano`
+</ResponseField>
+
+## Tool Permissions
+
+### Allowed Tools (Read Only)
+
+- `read` - Read and analyze files
+
+### Blocked Tools (All Others)
+
+<ParamField path="write" type="string" default="deny">
+  Cannot create files
+</ParamField>
+
+<ParamField path="edit" type="string" default="deny">
+  Cannot modify files
+</ParamField>
+
+<ParamField path="bash" type="string" default="deny">
+  Cannot execute commands
+</ParamField>
+
+<ParamField path="grep" type="string" default="deny">
+  Cannot search files (uses read only)
+</ParamField>
+
+<ParamField path="glob" type="string" default="deny">
+  Cannot search for files
+</ParamField>
+
+<ParamField path="task" type="string" default="deny">
+  Cannot delegate to other agents
+</ParamField>
+
+<Note>
+  Multimodal Looker has the strictest tool restrictions - only `read` is allowed. This ensures it focuses solely on interpreting the provided file.
+</Note>
+
+## When to Use Multimodal Looker
+
+### Recommended Scenarios
+
+<Check>**PDF analysis** - Extract text, tables, or structure from documents</Check>
+<Check>**Image interpretation** - Describe layouts, UI elements, charts, or diagrams</Check>
+<Check>**Diagram analysis** - Explain relationships, flows, or architecture depicted</Check>
+<Check>**Specific data extraction** - Pull particular information from visual content</Check>
+<Check>**Context token optimization** - Need analyzed data, not entire raw file</Check>
+
+### Avoid Multimodal Looker For
+
+<Warning>**Plain text files** - Use `read` tool directly instead</Warning>
+<Warning>**Source code** - Use `read` for exact contents needed for editing</Warning>
+<Warning>**Files needing modification** - Looker only extracts, can't edit</Warning>
+<Warning>**Simple file reading** - No interpretation needed, use regular tools</Warning>
+
+## How It Works
+
+Multimodal Looker follows a focused 4-step process:
+
+1. **Receive request** - Gets file path and specific extraction goal
+2. **Read and analyze** - Deeply interprets the visual content
+3. **Extract target information** - Returns ONLY what was requested
+4. **Pass to main agent** - Main agent continues work without processing raw file
+
+### Key Principle
+
+**Context token efficiency**: The main agent never processes the raw media file. Looker extracts and summarizes, saving thousands of tokens.
+
+## Response Rules
+
+<ResponseField name="No preamble" type="boolean">
+  Returns extracted information directly, without introduction
+</ResponseField>
+
+<ResponseField name="Clear when missing" type="boolean">
+  States explicitly what information wasn't found
+</ResponseField>
+
+<ResponseField name="Match request language" type="boolean">
+  Responds in the same language as the request
+</ResponseField>
+
+<ResponseField name="Thorough on goal" type="boolean">
+  Comprehensive on the specific extraction goal
+</ResponseField>
+
+<ResponseField name="Concise on everything else" type="boolean">
+  Brief on context or unrelated content
+</ResponseField>
+
+## Usage Examples
+
+### Example 1: PDF Data Extraction
+
+```typescript
+task(
+  subagent_type="multimodal-looker",
+  description="Extract pricing table from PDF",
+  prompt="Analyze pricing-2024.pdf and extract all pricing tiers, 
+          their monthly costs, and included features into a structured format."
+)
+
+// Multimodal Looker response:
+"Pricing Tiers:
+
+1. Starter - $29/month
+   - 10 users
+   - 100GB storage
+   - Email support
+   - Basic analytics
+
+2. Professional - $99/month
+   - 50 users
+   - 1TB storage
+   - Priority support
+   - Advanced analytics
+   - API access
+
+3. Enterprise - Custom pricing
+   - Unlimited users
+   - Unlimited storage
+   - 24/7 phone support
+   - Custom analytics
+   - Dedicated account manager
+   - SLA guarantee"
+```
+
+### Example 2: Architecture Diagram Analysis
+
+```typescript
+task(
+  subagent_type="multimodal-looker",
+  description="Explain system architecture from diagram",
+  prompt="Examine architecture-diagram.png and describe:
+          1. Main components and their responsibilities
+          2. Data flow between components
+          3. External services integrated"
+)
+
+// Multimodal Looker response:
+"Architecture Components:
+
+1. Frontend (React SPA)
+   - User interface
+   - Communicates via REST API
+   - Hosted on Cloudflare Pages
+
+2. API Gateway (Node.js/Express)
+   - Request routing
+   - Authentication middleware
+   - Rate limiting
+   - Routes to microservices
+
+3. User Service (Python/FastAPI)
+   - User management
+   - Authentication
+   - Writes to PostgreSQL
+
+4. Payment Service (Node.js)
+   - Payment processing
+   - Integrates with Stripe API
+   - Publishes events to message queue
+
+5. Notification Service (Go)
+   - Consumes queue events
+   - Sends emails via SendGrid
+   - Sends SMS via Twilio
+
+Data Flow:
+Frontend → API Gateway → Service → Database
+                      ↓
+           External APIs (Stripe, SendGrid, Twilio)
+                      ↓
+          Message Queue (RabbitMQ) between services
+
+External Services:
+- Stripe (payments)
+- SendGrid (email)
+- Twilio (SMS)
+- PostgreSQL (primary database)
+- Redis (caching and sessions)"
+```
+
+### Example 3: UI Screenshot Analysis
+
+```typescript
+task(
+  subagent_type="multimodal-looker",
+  description="Identify UI components in mockup",
+  prompt="Analyze dashboard-mockup.png and list all UI components 
+          with their positions and purposes."
+)
+
+// Multimodal Looker response:
+"UI Components:
+
+Header (Top):
+- Logo (left): Brand identity
+- Search bar (center): Global search
+- User avatar (right): Profile menu
+- Notifications bell (right): Alert center
+
+Sidebar (Left):
+- Dashboard icon: Overview page
+- Projects icon: Project list
+- Team icon: Team management
+- Settings icon: Configuration
+- Help icon: Documentation
+
+Main Content (Center):
+- Welcome heading: Page title
+- Stats cards (row of 4):
+  * Total users (blue)
+  * Active projects (green)
+  * Revenue (yellow)
+  * Pending tasks (red)
+- Activity feed: Recent events list
+- Quick actions button (bottom right): Floating action button
+
+Right Panel:
+- Calendar widget: Schedule overview
+- Team members list: Online status
+- Recent files: Document quick access"
+```
+
+### Example 4: Chart Data Extraction
+
+```typescript
+task(
+  subagent_type="multimodal-looker",
+  description="Extract sales data from chart image",
+  prompt="Read sales-chart-q4.png and extract the monthly sales figures 
+          for October, November, and December."
+)
+
+// Multimodal Looker response:
+"Q4 Sales Data:
+
+October: $142,500
+November: $198,300
+December: $256,700
+
+Total Q4: $597,500
+Average: $199,167/month
+Growth: 81% from Oct to Dec"
+```
+
+## When NOT to Use
+
+Multimodal Looker is specialized - avoid using it when simpler tools work:
+
+<Warning>
+  **Source code files**: Use `read` tool directly. Looker interprets and summarizes, but editing requires exact original content.
+</Warning>
+
+<Warning>
+  **Plain text documents**: No interpretation needed - regular `read` is faster and more accurate.
+</Warning>
+
+<Warning>
+  **Files you'll modify later**: Looker's extracted summary can't be edited back into the original file.
+</Warning>
+
+<Warning>
+  **When you need the full file**: If the entire content is needed, not just specific data, use `read` directly.
+</Warning>
+
+## Best Practices
+
+<Check>**Be specific about what to extract** - Clear goals produce better results</Check>
+<Check>**Request structured output** - Ask for tables, lists, or specific formats</Check>
+<Check>**One file at a time** - Focused analysis is more accurate</Check>
+<Check>**Use for token optimization** - When you need data from large PDFs</Check>
+
+<Warning>**Don't expect perfection** - Vision models may misread text or miss details</Warning>
+<Warning>**Don't use for critical exact data** - If precision is critical, verify manually</Warning>
+
+## Configuration
+
+Customize Multimodal Looker in `oh-my-opencode.jsonc`:
+
+```jsonc
+{
+  "agents": {
+    "multimodal-looker": {
+      "model": "opencode/kimi-k2.5-free",
+      "temperature": 0.1,
+      "prompt_append": "Additional extraction guidelines...",
+      "disable": false
+    }
+  }
+}
+```
+
+## Related Agents
+
+- [Sisyphus](/api/agents/sisyphus) - Orchestrator that uses Looker for media analysis
+- [Librarian](/api/agents/librarian) - Searches external docs (Looker analyzes local files)
+- [Explore](/api/agents/explore) - Searches codebase (Looker interprets visual content)

@@ -1,0 +1,275 @@
+---
+title: interactive_bash
+description: Tmux-backed interactive terminal sessions for TUI applications and REPLs
+---
+
+## Overview
+
+The `interactive_bash` tool provides tmux command execution for managing interactive terminal sessions. Use this for TUI applications (vim, htop, pudb) and REPL-based workflows that require ongoing interaction.
+
+**Source**: `src/tools/interactive-bash/`
+
+## Important: Tmux only
+
+This tool executes **tmux commands only**. It is NOT a general bash tool.
+
+- Pass tmux subcommands directly (without 'tmux' prefix)
+- For one-shot commands, use the regular Bash tool instead
+- For TUI apps needing ongoing interaction, use this tool
+
+## Parameters
+
+<ParamField path="tmux_command" type="string" required>
+  The tmux subcommand to execute (without 'tmux' prefix)
+  
+  Examples:
+  - `"new-session -d -s omo-dev"`
+  - `"send-keys -t omo-dev 'vim config.json' Enter"`
+  - `"list-sessions"`
+  - `"kill-session -t omo-dev"`
+  
+  **Note**: Do not include the `tmux` prefix. The tool adds it automatically.
+</ParamField>
+
+## Response
+
+<ResponseField name="output" type="string">
+  Command output or error
+  
+  **Success**:
+  ```
+  omo-dev: 1 windows (created Sat Mar 1 01:00:00 2026)
+  ```
+  
+  **Error**:
+  ```
+  Error: no sessions
+  ```
+  
+  **Timeout**:
+  ```
+  Error: Timeout after 60000ms
+  ```
+</ResponseField>
+
+## Blocked commands
+
+The following tmux commands are blocked and will return an error with instructions to use the Bash tool instead:
+
+- `capture-pane` / `capturep`
+- `save-buffer` / `saveb`
+- `show-buffer` / `showb`
+- `pipe-pane` / `pipep`
+
+These commands are for capturing terminal output. Use the Bash tool to execute them:
+
+```bash
+# Use Bash tool, NOT interactive_bash
+tmux capture-pane -p -t omo-session
+
+# Or capture with history (last 1000 lines)
+tmux capture-pane -p -t omo-session -S -1000
+```
+
+## Common patterns
+
+### Create and manage session
+
+```python
+# Create new detached session
+interactive_bash(tmux_command="new-session -d -s omo-dev")
+
+# Check if session exists
+interactive_bash(tmux_command="list-sessions")
+
+# Kill session when done
+interactive_bash(tmux_command="kill-session -t omo-dev")
+```
+
+### Send commands to session
+
+```python
+# Launch vim in the session
+interactive_bash(tmux_command="send-keys -t omo-dev 'vim config.json' Enter")
+
+# Send vim command (insert mode)
+interactive_bash(tmux_command="send-keys -t omo-dev 'i'")
+
+# Send text
+interactive_bash(tmux_command="send-keys -t omo-dev 'Hello world'")
+
+# Save and quit vim
+interactive_bash(tmux_command="send-keys -t omo-dev Escape ':wq' Enter")
+```
+
+### Python REPL workflow
+
+```python
+# Start Python REPL
+interactive_bash(tmux_command="new-session -d -s python-repl 'python3'")
+
+# Import modules
+interactive_bash(tmux_command="send-keys -t python-repl 'import numpy as np' Enter")
+
+# Run code
+interactive_bash(tmux_command="send-keys -t python-repl 'arr = np.array([1,2,3])' Enter")
+interactive_bash(tmux_command="send-keys -t python-repl 'print(arr.sum())' Enter")
+
+# Capture output using Bash tool
+# bash(command="tmux capture-pane -p -t python-repl", description="Get REPL output")
+```
+
+### Debugger interaction (pudb)
+
+```python
+# Create session and launch debugger
+interactive_bash(tmux_command="new-session -d -s debug-session 'pudb3 app.py'")
+
+# Send debugger commands
+interactive_bash(tmux_command="send-keys -t debug-session 'n'")
+interactive_bash(tmux_command="send-keys -t debug-session 's'")
+interactive_bash(tmux_command="send-keys -t debug-session 'b 45'")
+interactive_bash(tmux_command="send-keys -t debug-session 'c'")
+```
+
+### TUI application (htop)
+
+```python
+# Launch htop
+interactive_bash(tmux_command="new-session -d -s monitor 'htop'")
+
+# Navigate (arrow keys)
+interactive_bash(tmux_command="send-keys -t monitor Down Down Down")
+
+# Send command (F9 for kill)
+interactive_bash(tmux_command="send-keys -t monitor F9")
+
+# Quit
+interactive_bash(tmux_command="send-keys -t monitor q")
+```
+
+## Special keys
+
+Tmux `send-keys` supports special key names:
+
+- `Enter` - Send enter/return key
+- `Escape` - Send escape key
+- `Space` - Send space
+- `Tab` - Send tab
+- `BSpace` - Send backspace
+- `Up`, `Down`, `Left`, `Right` - Arrow keys
+- `C-c` - Send Ctrl+C
+- `C-d` - Send Ctrl+D
+- `F1` through `F12` - Function keys
+
+Example:
+
+```python
+interactive_bash(tmux_command="send-keys -t omo-dev C-c")
+interactive_bash(tmux_command="send-keys -t omo-dev 'ls -la' Enter")
+```
+
+## Timeout
+
+Commands timeout after 60 seconds (60000ms). If a command exceeds this timeout:
+
+```
+Error: Timeout after 60000ms
+```
+
+The process is automatically killed to prevent hanging.
+
+## Quote handling
+
+The tool includes a quote-aware tokenizer that properly handles:
+
+- Single quotes: `'vim file.txt'`
+- Double quotes: `"echo 'hello'"`
+- Escaped characters: `\"escaped quotes\"`
+- Spaces in arguments: `'file with spaces.txt'`
+
+Example:
+
+```python
+interactive_bash(tmux_command="send-keys -t omo-dev 'echo \"Hello, World!\"' Enter")
+```
+
+## Error handling
+
+### Session not found
+
+```
+Error: no server running on /tmp/tmux-1000/default
+```
+
+Create the session first:
+
+```python
+interactive_bash(tmux_command="new-session -d -s omo-dev")
+```
+
+### Invalid command
+
+```
+Error: unknown command: invalid-command
+```
+
+Check tmux documentation for valid subcommands: `man tmux`
+
+### Blocked command
+
+```
+Error: 'capture-pane' is blocked in interactive_bash.
+
+**USE BASH TOOL INSTEAD:**
+
+tmux capture-pane -p -t omo-session
+
+The Bash tool can execute these commands directly. Do NOT retry with interactive_bash.
+```
+
+## Implementation details
+
+### Tmux path resolution
+
+The tool automatically resolves the tmux binary path:
+
+1. Checks cached path from background check
+2. Falls back to `tmux` in PATH
+
+Background check runs on plugin initialization to locate tmux early.
+
+### Process management
+
+Commands are executed via `spawnWithWindowsHide` to prevent console window flashing on Windows.
+
+Stdout and stderr are captured in parallel to avoid race conditions.
+
+### Exit code handling
+
+Non-zero exit codes are treated as errors:
+
+```
+Error: Command failed with exit code 1
+```
+
+Error message includes stderr output when available.
+
+## When to use
+
+**Use `interactive_bash` for**:
+- TUI applications (vim, nano, htop, ncdu)
+- Interactive debuggers (pudb, pdb)
+- REPLs requiring multi-step interaction (python, node, irb)
+- Long-running processes in tmux sessions
+
+**Use `bash` tool for**:
+- One-shot commands that complete immediately
+- Capturing tmux session output
+- Standard shell operations
+- File operations, git commands, build tools
+
+## Related tools
+
+- [bash](/api/tools/bash) - General shell command execution
+- [task](/api/tools/task) - Delegate work to agents

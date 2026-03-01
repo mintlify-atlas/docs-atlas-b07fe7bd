@@ -1,0 +1,363 @@
+---
+title: glob
+description: Fast file pattern matching with safety limits
+---
+
+## Overview
+
+The `glob` tool provides fast file pattern matching using ripgrep's file enumeration. Use this when you need to find files by name patterns.
+
+**Source**: `src/tools/glob/`
+
+## Implementation
+
+Uses ripgrep (`rg --files`) with glob pattern matching:
+
+- 60 second timeout
+- 100 file limit
+- Results sorted by modification time (newest first)
+- Respects `.gitignore` and `.ignore` files
+
+## Parameters
+
+<ParamField path="pattern" type="string" required>
+  The glob pattern to match files against
+  
+  Examples:
+  - `"**/*.js"` - All JavaScript files
+  - `"src/**/*.ts"` - TypeScript files in src/
+  - `"*.json"` - JSON files in current directory
+  - `"**/test/*.spec.ts"` - Test files
+  - `"components/**/*.{tsx,jsx}"` - React components
+  
+  **Syntax**:
+  - `*` - Match any characters except `/`
+  - `**` - Match any characters including `/`
+  - `?` - Match single character
+  - `[abc]` - Match one character from set
+  - `{a,b}` - Match either pattern
+</ParamField>
+
+<ParamField path="path" type="string">
+  The directory to search in
+  
+  Defaults to current working directory.
+  
+  **Important**: Omit this field to use the default directory. DO NOT enter "undefined" or "null" - simply omit it for the default behavior.
+  
+  Example: `"src/components"`
+</ParamField>
+
+## Response
+
+<ResponseField name="output" type="string">
+  Matching file paths
+  
+  **Success with matches**:
+  ```
+  Found 15 files matching "**/*.ts" (showing newest first):
+  
+  src/tools/glob/tools.ts
+  src/tools/grep/tools.ts
+  src/tools/task/tools.ts
+  src/agents/explore/index.ts
+  src/shared/logger.ts
+  ...
+  ```
+  
+  **No matches**:
+  ```
+  No files found matching "**/*.xyz"
+  ```
+  
+  **Truncated results** (over 100 files):
+  ```
+  Found 250 files matching "**/*.js" (showing newest 100):
+  
+  [Results truncated to 100 files. Refine your pattern for full results.]
+  ```
+  
+  **Error**:
+  ```
+  Error: ripgrep not found. Install ripgrep or add it to PATH.
+  ```
+</ResponseField>
+
+## Usage examples
+
+### Find all TypeScript files
+
+```python
+glob(pattern="**/*.ts")
+```
+
+### Find React components
+
+```python
+glob(pattern="**/*.{tsx,jsx}")
+```
+
+### Find test files
+
+```python
+glob(pattern="**/*.{test,spec}.{ts,js}")
+```
+
+### Find config files
+
+```python
+glob(pattern="*.{json,yaml,yml,toml}")
+```
+
+### Search specific directory
+
+```python
+glob(pattern="**/*.ts", path="src/tools")
+```
+
+### Find markdown files
+
+```python
+glob(pattern="**/*.md")
+```
+
+## Common patterns
+
+### Find by extension
+
+```python
+# Single extension
+glob(pattern="**/*.js")
+
+# Multiple extensions
+glob(pattern="**/*.{js,ts,jsx,tsx}")
+```
+
+### Find by directory
+
+```python
+# Specific directory
+glob(pattern="src/**/*.ts")
+
+# Multiple directories
+glob(pattern="{src,tests}/**/*.ts")
+```
+
+### Find by name pattern
+
+```python
+# Files starting with "test"
+glob(pattern="**/test*.ts")
+
+# Files ending with "spec"
+glob(pattern="**/*spec.ts")
+
+# Files containing "util"
+glob(pattern="**/*util*.ts")
+```
+
+### Exclude patterns
+
+Use `.gitignore` or `.ignore` files to exclude patterns:
+
+```gitignore
+node_modules/
+dist/
+build/
+*.log
+```
+
+The glob tool respects these files automatically.
+
+## Safety limits
+
+### Timeout
+
+Commands timeout after 60 seconds:
+
+```
+Error: Timeout after 60000ms
+```
+
+Refine your pattern or search a smaller directory.
+
+### File limit
+
+Results are limited to 100 files:
+
+```
+Found 500 files matching "**/*.js" (showing newest 100)
+
+[Results truncated to 100 files. Refine your pattern for full results.]
+```
+
+Refine your pattern to get more specific results.
+
+## Sorting
+
+Results are sorted by modification time (newest first):
+
+```
+src/tools/glob/tools.ts           (modified 1 minute ago)
+src/tools/grep/tools.ts           (modified 5 minutes ago)
+src/agents/explore/index.ts       (modified 1 hour ago)
+```
+
+This helps surface recently changed files first.
+
+## Ripgrep integration
+
+The tool uses ripgrep's `--files` mode with glob filtering:
+
+```bash
+rg --files --glob 'pattern' path
+```
+
+Ripgrep is fast because it:
+- Respects `.gitignore` automatically
+- Uses parallel directory traversal
+- Skips binary files
+- Handles large codebases efficiently
+
+## Auto-installation
+
+If ripgrep is not found, the tool attempts to auto-install:
+
+1. Checks for `rg` in PATH
+2. If not found, downloads platform-specific binary
+3. Installs to `~/.local/bin/rg`
+4. Retries command
+
+Supported platforms:
+- Linux x64/arm64
+- macOS x64/arm64
+- Windows x64
+
+## Error handling
+
+### Ripgrep not found
+
+```
+Error: ripgrep not found. Install ripgrep or add it to PATH.
+```
+
+Install ripgrep:
+
+```bash
+# macOS
+brew install ripgrep
+
+# Ubuntu/Debian
+sudo apt install ripgrep
+
+# Fedora
+sudo dnf install ripgrep
+
+# Windows
+winget install BurntSushi.ripgrep.MSVC
+```
+
+### Invalid pattern
+
+```
+Error: invalid glob pattern
+```
+
+Check your glob syntax. Common mistakes:
+- Missing quotes: `**/*.ts` (wrong) vs `"**/*.ts"` (right)
+- Invalid regex: `[a-` (unclosed bracket)
+
+### Permission denied
+
+```
+Error: Permission denied
+```
+
+Check directory permissions or use a different search path.
+
+## Performance tips
+
+### Be specific
+
+Instead of:
+```python
+glob(pattern="**/*")
+```
+
+Use:
+```python
+glob(pattern="src/**/*.ts")
+```
+
+### Use file extensions
+
+Instead of:
+```python
+glob(pattern="**/auth*")
+```
+
+Use:
+```python
+glob(pattern="**/auth*.ts")
+```
+
+### Search subdirectories
+
+Instead of:
+```python
+glob(pattern="**/*.ts")
+```
+
+Use:
+```python
+glob(pattern="**/*.ts", path="src/tools")
+```
+
+## Comparison with find
+
+Glob tool vs Unix `find` command:
+
+| Feature | glob | find |
+|---------|------|------|
+| Speed | Very fast (ripgrep) | Slower |
+| Gitignore | Automatic | Manual |
+| Sorting | By mtime | Manual |
+| Limits | 100 files, 60s | None |
+| Syntax | Glob patterns | Complex expressions |
+
+For most use cases, glob is faster and easier.
+
+## Implementation details
+
+### CLI execution
+
+Executes ripgrep via `runRgFiles()`:
+
+```typescript
+const result = await runRgFiles(
+  {
+    pattern: args.pattern,
+    paths: [searchPath],
+  },
+  cli
+)
+```
+
+### Result formatting
+
+Results are formatted by `formatGlobResult()`:
+
+- Sorts by modification time
+- Truncates to 100 files
+- Adds context messages
+- Handles empty results
+
+### Thread limiting
+
+Ripgrep thread count is limited to prevent resource exhaustion on large codebases.
+
+## Related tools
+
+- [grep](/api/tools/grep) - Search file contents
+- [bash](/api/tools/bash) - Execute shell commands
+- [read](/api/tools/read) - Read file contents

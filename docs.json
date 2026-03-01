@@ -79,7 +79,11 @@
               "api/agents/atlas",
               "api/agents/oracle",
               "api/agents/librarian",
-              "api/agents/explore"
+              "api/agents/explore",
+              "api/agents/multimodal-looker",
+              "api/agents/metis",
+              "api/agents/momus",
+              "api/agents/sisyphus-junior"
             ]
           },
           {
@@ -90,7 +94,14 @@
               "api/tools/lsp-tools",
               "api/tools/ast-grep",
               "api/tools/background-task",
-              "api/tools/delegate-task"
+              "api/tools/delegate-task",
+              "api/tools/call-omo-agent",
+              "api/tools/interactive-bash",
+              "api/tools/skill",
+              "api/tools/slashcommand",
+              "api/tools/task",
+              "api/tools/glob",
+              "api/tools/grep"
             ]
           },
           {

@@ -1,0 +1,517 @@
+---
+title: task
+description: Delegate work to specialized agents by category with skill loading and model selection
+---
+
+## Overview
+
+The `task` tool provides full-featured agent delegation with category-based model selection, skill loading, and both synchronous and asynchronous execution modes. This is the primary tool for delegating work to subagents.
+
+**Source**: `src/tools/delegate-task/`
+
+## Distinction from call_omo_agent
+
+| Aspect | `task` | `call_omo_agent` |
+|--------|--------|------------------|
+| Selection | Category or subagent_type | Named agent only |
+| Skill loading | `load_skills[]` supported | Not supported |
+| Model selection | From category config | From agent's fallback chain |
+| Use case | Full delegation with skills | Quick direct agent call |
+
+## Parameters
+
+<ParamField path="load_skills" type="array" required>
+  Skill names to inject into agent context
+  
+  **REQUIRED** - Pass `[]` if no skills needed.
+  
+  Examples:
+  - `[]` - No skills
+  - `["code-review"]` - Single skill
+  - `["mintlify", "doc-author"]` - Multiple skills
+  
+  Skills provide specialized instructions and MCP servers to the delegated agent.
+</ParamField>
+
+<ParamField path="description" type="string" required>
+  Short task description (3-5 words)
+  
+  Example: `"Fix type errors"`
+</ParamField>
+
+<ParamField path="prompt" type="string" required>
+  Full detailed prompt for the agent
+  
+  Must be in English. Provide clear, specific instructions.
+  
+  Example:
+  ```
+  Review the authentication module for security vulnerabilities.
+  Check for:
+  - SQL injection risks
+  - XSS vulnerabilities
+  - Insecure password storage
+  Provide specific line numbers and fix recommendations.
+  ```
+</ParamField>
+
+<ParamField path="run_in_background" type="boolean" required>
+  Execution mode
+  
+  - `false`: Synchronous execution, waits for completion (recommended)
+  - `true`: Asynchronous execution, returns task_id immediately
+  
+  **REQUIRED** - Must be explicitly set.
+  
+  Use `false` for most tasks. Use `true` ONLY for parallel exploration with 5+ independent queries.
+</ParamField>
+
+<ParamField path="category" type="string">
+  Task category for model and prompt selection
+  
+  **REQUIRED** if `subagent_type` not provided.
+  
+  Built-in categories:
+  - `visual-engineering` - Frontend, UI/UX, design, styling, animation
+  - `ultrabrain` - Hard logic-heavy tasks (use sparingly)
+  - `deep` - Goal-oriented autonomous problem-solving
+  - `artistry` - Creative approaches beyond standard patterns
+  - `quick` - Trivial tasks, single file changes
+  - `unspecified-low` - Moderate effort, unclassified tasks
+  - `unspecified-high` - High effort, unclassified tasks
+  - `writing` - Documentation, prose, technical writing
+  
+  **Do NOT provide both `category` and `subagent_type`.**
+</ParamField>
+
+<ParamField path="subagent_type" type="string">
+  Direct agent selection (explore, librarian, oracle, metis, momus)
+  
+  **REQUIRED** if `category` not provided.
+  
+  Use for specific agent invocation without category system.
+  
+  **Do NOT provide both `category` and `subagent_type`.**
+</ParamField>
+
+<ParamField path="session_id" type="string">
+  Existing task session to continue
+  
+  Pass this to resume a previous task with full context preserved.
+  
+  **When to use**:
+  - Task failed/incomplete → session_id with "fix: [specific issue]"
+  - Need follow-up on previous result → session_id with additional question
+  - Multi-turn conversation with same agent → always session_id instead of new task
+  
+  **Benefits**: Saves tokens, maintains continuity, preserves full context.
+  
+  Example: `"task-1234567890"`
+</ParamField>
+
+<ParamField path="command" type="string">
+  The slash command that triggered this task (optional)
+  
+  Used for tracking command-triggered delegations.
+</ParamField>
+
+## Response
+
+<ResponseField name="output" type="string">
+  Task execution result or task_id
+  
+  **Synchronous mode** (`run_in_background=false`):
+  ```
+  ## Task Results
+  
+  I reviewed the authentication module and found:
+  
+  1. SQL Injection risk in src/auth/login.ts:45
+     - Raw query concatenation
+     - Fix: Use parameterized queries
+  
+  2. XSS vulnerability in src/auth/profile.ts:120
+     - Unescaped user input in template
+     - Fix: Use DOMPurify.sanitize()
+  
+  3. Weak password hashing in src/auth/password.ts:78
+     - Using MD5
+     - Fix: Upgrade to bcrypt with salt
+  ```
+  
+  **Asynchronous mode** (`run_in_background=true`):
+  ```
+  Task launched successfully. Task ID: bg-task-1234567890
+  
+  Use background_output(task_id="bg-task-1234567890") to check status.
+  ```
+</ResponseField>
+
+## Categories
+
+### visual-engineering
+
+**Model**: `google/gemini-3.1-pro` (high variant)
+
+**Best for**:
+- Frontend development
+- UI/UX implementation
+- Styling and CSS
+- Animations and interactions
+- Design system work
+
+**Prompt guidance**: Design-first mindset, bold aesthetic choices, distinctive typography, high-impact animations.
+
+### ultrabrain
+
+**Model**: `openai/gpt-5.3-codex` (xhigh variant)
+
+**Best for**:
+- Genuinely hard, logic-heavy tasks
+- Complex architecture decisions
+- Deep reasoning problems
+- System design
+
+**Prompt guidance**: Bias toward simplicity, leverage existing patterns, prioritize maintainability. Give clear goals only, not step-by-step instructions.
+
+**Important**: Use sparingly. This is for genuinely difficult problems, not routine work.
+
+### deep
+
+**Model**: `openai/gpt-5.3-codex` (medium variant)
+
+**Best for**:
+- Goal-oriented autonomous problem-solving
+- Hairy problems requiring deep understanding
+- Tasks requiring extensive codebase exploration
+- Multi-file refactoring
+
+**Prompt guidance**: Agent explores extensively before acting. Provide goals, not steps. Expects thorough research phase.
+
+### artistry
+
+**Model**: `google/gemini-3.1-pro` (high variant)
+
+**Best for**:
+- Highly creative tasks
+- Unconventional approaches
+- Novel solutions
+- Artistic expression
+
+**Prompt guidance**: Push beyond boundaries, surprise and delight, embrace experimentation.
+
+### quick
+
+**Model**: `anthropic/claude-haiku-4-5`
+
+**Best for**:
+- Trivial tasks
+- Single file changes
+- Typo fixes
+- Simple modifications
+
+**Prompt guidance**: Fast, focused, minimal overhead. No over-engineering.
+
+**Warning**: Less capable model. Prompts MUST be exhaustively explicit:
+- MUST DO: List every required action
+- MUST NOT DO: List forbidden actions
+- EXPECTED OUTPUT: Concrete success criteria
+
+### unspecified-low
+
+**Model**: `anthropic/claude-sonnet-4-6`
+
+**Best for**:
+- Moderate effort tasks
+- Tasks that don't fit other categories
+- Contained scope (few files/modules)
+
+**Prompt guidance**: Provide clear structure with MUST DO / MUST NOT DO sections.
+
+### unspecified-high
+
+**Model**: `anthropic/claude-opus-4-6` (max variant)
+
+**Best for**:
+- High effort tasks
+- Broad impact changes
+- Tasks that don't fit other categories
+- Multi-system coordination
+
+**Prompt guidance**: Substantial effort across multiple systems.
+
+### writing
+
+**Model**: `kimi-for-coding/k2p5`
+
+**Best for**:
+- Documentation
+- READMEs
+- Technical writing
+- Articles and prose
+
+**Prompt guidance**: Clear, flowing prose. Natural contractions. Varied sentence length. NO AI-slop phrases ("delve", "leverage", "robust", etc.). NO em dashes.
+
+## Usage patterns
+
+### Basic delegation
+
+```python
+task(
+  category="quick",
+  load_skills=[],
+  description="Fix typo",
+  prompt="Fix the typo in README.md line 45: 'teh' should be 'the'",
+  run_in_background=False
+)
+```
+
+### Delegation with skills
+
+```python
+task(
+  category="writing",
+  load_skills=["mintlify", "doc-author"],
+  description="Write API docs",
+  prompt="Write comprehensive API documentation for the authentication endpoints in src/api/auth.ts",
+  run_in_background=False
+)
+```
+
+### Session continuation
+
+```python
+# Initial task
+result = task(
+  category="deep",
+  load_skills=[],
+  description="Refactor auth",
+  prompt="Refactor authentication module for better testability",
+  run_in_background=False
+)
+
+# Extract session_id from result
+session_id = result.metadata["sessionId"]
+
+# Continue session
+task(
+  category="deep",
+  load_skills=[],
+  description="Add tests",
+  prompt="Now add comprehensive tests for the refactored authentication module",
+  run_in_background=False,
+  session_id=session_id
+)
+```
+
+### Parallel background tasks
+
+```python
+# Launch multiple tasks in parallel
+task1 = task(
+  category="deep",
+  load_skills=[],
+  description="Explore frontend",
+  prompt="Map out React component structure",
+  run_in_background=True
+)
+
+task2 = task(
+  category="deep",
+  load_skills=[],
+  description="Explore backend",
+  prompt="Find all API endpoints",
+  run_in_background=True
+)
+
+task3 = task(
+  category="deep",
+  load_skills=[],
+  description="Explore database",
+  prompt="Document database schema",
+  run_in_background=True
+)
+
+# Poll all results
+background_output(task_id=task1)
+background_output(task_id=task2)
+background_output(task_id=task3)
+```
+
+### Direct agent selection
+
+```python
+task(
+  subagent_type="explore",
+  load_skills=[],
+  description="Find patterns",
+  prompt="Find all authentication patterns in the codebase",
+  run_in_background=False
+)
+```
+
+## Model selection
+
+Model resolution follows a 4-step process:
+
+1. **Category/Agent override** - Explicit model in config
+2. **Category default** - Built-in category model
+3. **Provider fallback** - Next available model from provider
+4. **System default** - OpenCode default model
+
+Example with `ultrabrain` category:
+
+1. Check user config for `categories.ultrabrain.model`
+2. Use default `openai/gpt-5.3-codex`
+3. If unavailable, try fallback chain
+4. Fall back to system default
+
+## Model variants
+
+Variants control effort level:
+
+- `xhigh` - Maximum reasoning
+- `high` - High effort
+- `medium` - Medium effort
+- `low` - Low effort
+- No variant - Default
+
+Example: `"openai/gpt-5.3-codex medium"` → model=gpt-5.3-codex, variant=medium
+
+## Skill loading
+
+Skills are loaded from:
+
+1. Project (`.opencode/skills/`)
+2. User (`~/.config/opencode/skills/`)
+3. Built-in (plugin skills)
+
+Skill content is injected into agent's system prompt. Skills can include:
+
+- Detailed instructions
+- Step-by-step guidance
+- Embedded MCP servers
+- Tool restrictions
+- Best practices
+
+## Error handling
+
+### Missing category and subagent_type
+
+```
+Invalid arguments: Must provide either category or subagent_type.
+```
+
+### Missing run_in_background
+
+```
+Invalid arguments: 'run_in_background' parameter is REQUIRED. Use run_in_background=false for task delegation, run_in_background=true only for parallel exploration.
+```
+
+### Missing load_skills
+
+```
+Invalid arguments: 'load_skills' parameter is REQUIRED. Pass [] if no skills needed.
+```
+
+### Invalid category
+
+```
+Error: Category "invalid-category" not found. Available: visual-engineering, ultrabrain, deep, artistry, quick, unspecified-low, unspecified-high, writing
+```
+
+### Skill not found
+
+```
+Error: Skill "unknown-skill" not found. Available: code-review, mintlify, doc-author, ...
+```
+
+### Model unavailable
+
+If the category's model is unavailable, the tool automatically falls back to the next available model in the fallback chain.
+
+## Unstable agent handling
+
+Some categories use models known to be unstable (e.g., free models). When detected:
+
+- Synchronous execution is forced to background mode
+- `unstableAgentBabysitter` hook monitors execution
+- User is notified about background execution
+
+This ensures unstable agents don't block the main thread.
+
+## Custom categories
+
+Define custom categories in `oh-my-opencode.json`:
+
+```json
+{
+  "categories": {
+    "api-development": {
+      "model": "anthropic/claude-opus-4-6",
+      "variant": "high",
+      "description": "REST API and GraphQL development"
+    }
+  }
+}
+```
+
+Use custom category:
+
+```python
+task(
+  category="api-development",
+  load_skills=[],
+  description="Build API",
+  prompt="Implement REST API for user management",
+  run_in_background=False
+)
+```
+
+## Implementation details
+
+### Execution flow
+
+**Synchronous**:
+1. Resolve category/agent and model
+2. Load skills
+3. Build system prompt
+4. Create OpenCode session
+5. Send prompt
+6. Poll until idle
+7. Extract result
+8. Return to caller
+
+**Asynchronous**:
+1. Resolve category/agent and model
+2. Load skills
+3. Build system prompt
+4. Launch via BackgroundManager
+5. Return task_id immediately
+6. Background polling continues
+7. User polls with background_output
+
+### Prompt building
+
+System prompt includes:
+- Agent instructions
+- Skill content
+- Category-specific guidance
+- Available categories (for nested delegation)
+- Available skills (for nested delegation)
+- Token limits based on model
+
+### Session continuation
+
+When `session_id` is provided:
+- Session is resumed (not created)
+- New prompt is sent to existing session
+- Full context is preserved
+- Model and agent remain unchanged
+
+## Related tools
+
+- [call_omo_agent](/api/tools/call-omo-agent) - Quick direct agent invocation
+- [skill](/api/tools/skill) - Load skills and commands
+- [background_output](/api/tools/background-task) - Poll background results
+- [background_cancel](/api/tools/background-task) - Cancel background tasks
