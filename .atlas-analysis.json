@@ -1,0 +1,163 @@
+{
+  "projectType": "framework",
+  "projectName": "Oh My OpenCode",
+  "projectDescription": "Multi-model AI agent orchestration framework for OpenCode with parallel execution, specialized agents, and advanced developer tooling",
+  "theme": "aspen",
+  "primaryColor": "#369eff",
+  "lightColor": "#8ae8ff",
+  "darkColor": "#0066cc",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/agents",
+              "concepts/orchestration",
+              "concepts/categories"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/ultrawork-mode",
+              "guides/prometheus-planning",
+              "guides/background-agents",
+              "guides/agent-model-matching",
+              "guides/custom-categories",
+              "guides/skills",
+              "guides/commands"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/overview",
+              "configuration/agents",
+              "configuration/categories",
+              "configuration/hooks",
+              "configuration/mcps",
+              "configuration/advanced"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Agents",
+            "pages": [
+              "api/agents/sisyphus",
+              "api/agents/hephaestus",
+              "api/agents/prometheus",
+              "api/agents/atlas",
+              "api/agents/oracle",
+              "api/agents/librarian",
+              "api/agents/explore"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": [
+              "api/tools/overview",
+              "api/tools/hashline-edit",
+              "api/tools/lsp-tools",
+              "api/tools/ast-grep",
+              "api/tools/background-task",
+              "api/tools/delegate-task"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "api/features/hooks",
+              "api/features/skills",
+              "api/features/mcps",
+              "api/features/tmux",
+              "api/features/comment-checker"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Advanced",
+        "groups": [
+          {
+            "group": "Extending",
+            "pages": [
+              "advanced/custom-skills",
+              "advanced/custom-hooks",
+              "advanced/custom-agents",
+              "advanced/plugin-development"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "resources/manifesto",
+              "resources/troubleshooting",
+              "resources/faq",
+              "resources/contributing"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-model agent orchestration with 11 specialized agents (Sisyphus, Hephaestus, Prometheus, Atlas, Oracle, Librarian, Explore, and more)",
+    "Parallel background agent execution - run multiple agents simultaneously like a real dev team",
+    "Hash-anchored edit tool with LINE#ID content validation for zero stale-line errors",
+    "Category-based task delegation (visual-engineering, ultrabrain, deep, quick) with automatic model selection",
+    "LSP and AST-Grep integration for workspace refactoring, diagnostics, and pattern-aware code search",
+    "Intent Gate for true user intent classification before task execution",
+    "Ultrawork mode - one command that orchestrates everything until completion",
+    "Prometheus planning agent with interview mode for strategic task breakdown",
+    "Full Claude Code compatibility - all hooks, commands, skills, MCPs, and plugins work unchanged",
+    "46 lifecycle hooks for deep customization and workflow automation",
+    "Built-in MCPs for web search (Exa), documentation (Context7), and GitHub search (grep.app)",
+    "Skill-embedded MCP servers that spin up on-demand to preserve context budget",
+    "Tmux integration for interactive terminal sessions with REPLs and debuggers",
+    "Ralph Loop and Todo Enforcer for relentless task completion",
+    "Comment Checker to prevent AI-generated code slop"
+  ],
+  "publicApiSurface": [
+    "Sisyphus Agent - Main orchestrator with todo-driven workflow and parallel execution",
+    "Hephaestus Agent - Autonomous deep worker for goal-oriented execution (GPT-5.3-codex)",
+    "Prometheus Agent - Strategic planner with interview mode",
+    "Atlas Agent - Todo-list orchestrator for systematic task execution",
+    "Oracle Agent - Read-only architecture consultant for debugging and review",
+    "Librarian Agent - Multi-repo documentation and code search specialist",
+    "Explore Agent - Fast codebase exploration with contextual grep",
+    "Multimodal-Looker Agent - Visual content analysis for PDFs, images, diagrams",
+    "ultrawork / ulw command - One-command orchestration until task completion",
+    "task tool - Delegate to specialized agents by category",
+    "background_task tool - Launch agents in parallel background execution",
+    "call_omo_agent tool - Invoke specific named agents (oracle, librarian, explore)",
+    "hashline_edit tool - Hash-anchored line editing with content validation",
+    "lsp_* tools - LSP integration (rename, goto_definition, find_references, diagnostics)",
+    "ast_grep tool - Pattern-aware code search across 25 languages",
+    "interactive_bash tool - Tmux-backed interactive terminal sessions",
+    "delegate_task tool - Category-based task delegation with auto model selection",
+    "skill tool - Load domain-specific instructions and embedded MCP servers",
+    "slashcommand tool - Execute custom commands with template support",
+    "46 lifecycle hooks - Complete customization of agent behavior and workflow",
+    "Category system - 8 built-in categories (visual-engineering, ultrabrain, deep, artistry, quick, unspecified-low, unspecified-high, writing)",
+    "Background agent concurrency - Configurable parallel execution limits per provider/model",
+    "Skill-embedded MCPs - On-demand MCP server loading scoped to specific skills",
+    "/init-deep command - Generate hierarchical AGENTS.md files for codebase context",
+    "/start-work command - Execute Prometheus plans with Atlas orchestration"
+  ]
+}
